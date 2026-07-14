@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+option csharp_namespace = "Community_Service";
+
+package Channel_Service;
+
+// The greeting service definition.
+service Channel {
+  // Sends a greeting
+  
+}
+
+
+message ChannelRequest {
+  string name = 1;
+  string type = 2;
+  int64 ServerId = 3;
+}
+
+message ChannelResponse {
+  string id = 1;
+  string name = 2;
+  string type = 3;
+  int64 ServerId = 4;
+}
