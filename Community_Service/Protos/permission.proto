@@ -1,0 +1,199 @@
+syntax = "proto3";
+
+package permission.v1;
+
+option csharp_namespace = "Community_Service.Permissions.Grpc";
+
+/*
+1. Роли
+  - список ролей (адм)
+  - список ролей пользователя (любой, кто есть на сервере с пользователем)
+  - Дать роль челику
+  - Забрать роль у челика
+  - Создать роль (проверить, может ли чел это сделать)
+  - Изменить приоритет роли
+  - Изменить пермишены роли (массив permission, те что не меняются - не меняются)
+  - Сбросить пермишены для роли
+ */
+
+service RoleService {
+  rpc AdminListRoles(AdminListRolesRequest) returns (AdminListRolesResponse);
+  rpc AdminCreateRole(AdminCreateRoleRequest) returns (AdminCreateRoleResponse);
+  rpc AdminAddRole(AdminAddRoleRequest) returns (AdminAddRoleResponse);
+  rpc AdminTakeRole(AdminTakeRoleRequest) returns (AdminTakeRoleResponse);
+  rpc AdminEditRole(AdminEditRoleRequest) returns (AdminEditRoleResponse);
+  // Частичное изменение пермишенов роли: переданные ключи перезаписываются,
+  // остальные не трогаются. status = 0 удаляет запись (unknown).
+  rpc AdminSetRolePermissions(AdminSetRolePermissionsRequest) returns (AdminSetRolePermissionsResponse);
+  // Полный сброс пермишенов роли (все в unknown).
+  rpc AdminResetRolePermissions(AdminResetRolePermissionsRequest) returns (AdminResetRolePermissionsResponse);
+  rpc AdminChangeRoleWeight(AdminChangeRoleWeightRequest) returns (AdminChangeRoleWeightResponse);
+  rpc ListUserRoles(ListUserRolesRequest) returns (ListUserRolesResponse);
+}
+
+message PermissionState {
+  string key = 1;
+  int32 status = 2; // -1 (< 0 - нет) / 0 - unknown / 1 (> 0 - да)
+}
+
+message Role {
+  uint64 id = 1;
+  uint64 community = 2;
+  string name = 3;
+  int32 weight = 4;
+  repeated PermissionState permissions = 5;
+}
+
+message AdminListRolesRequest {
+  uint64 server_id = 1;
+}
+
+message AdminListRolesResponse {
+  repeated Role roles = 1;
+}
+
+message AdminCreateRoleRequest {
+  uint64 server_id = 1;
+  optional string role_name = 2;
+}
+
+message AdminCreateRoleResponse {
+  Role role = 1;
+}
+
+message AdminAddRoleRequest {
+  uint64 user_id = 1;
+  uint64 role_id = 2;
+}
+
+message AdminAddRoleResponse {
+  repeated Role roles = 1;
+}
+
+message AdminTakeRoleRequest {
+  uint64 user_id = 1;
+  uint64 role_id = 2;
+}
+
+message AdminTakeRoleResponse {
+  repeated Role roles = 1;
+}
+
+message AdminEditRoleRequest {
+  uint64 role_id = 1;
+  optional string role_name = 2;
+}
+
+message AdminEditRoleResponse {
+  Role role = 1;
+}
+
+message AdminSetRolePermissionsRequest {
+  uint64 role_id = 1;
+  repeated PermissionState permissions = 2;
+}
+
+message AdminSetRolePermissionsResponse {
+  Role role = 1;
+}
+
+message AdminResetRolePermissionsRequest {
+  uint64 role_id = 1;
+}
+
+message AdminResetRolePermissionsResponse {
+  Role role = 1;
+}
+
+message AdminChangeRoleWeightRequest {
+  uint64 role_id = 1;
+  uint64 anchor_role = 2;
+  bool anchor_higher = 3;
+}
+
+message AdminChangeRoleWeightResponse {
+  Role role = 1;
+}
+
+message ListUserRolesRequest {
+  uint64 user_id = 1;
+  uint64 server_id = 2;
+}
+
+message ListUserRolesResponse {
+  repeated Role roles = 1;
+}
+
+/*
+2. Permission сервис
+  - проверить имеет ли пользователь доступ к каналу (+ Batch режим)
+  - проверить имеет ли пользователь доступ к категории, если не имеет => к каналам внутри тоже.
+  - Посмотреть какие доступы имеет пользователь к конкретному каналу (+ batch + self)
+  - Получить список доступов
+ */
+
+service PermissionService {
+  rpc ListPermissions(ListPermissionsRequest) returns (ListPermissionsResponse);
+  rpc AdminHasChannelAccess(AdminHasChannelAccessRequest) returns (AdminHasChannelAccessResponse);
+  rpc AdminHasCategoryAccess(AdminHasCategoryAccessRequest) returns (AdminHasCategoryAccessResponse);
+  rpc AdminListUserPermissions(AdminListUserPermissionsRequest) returns (AdminListUserPermissionsResponse);
+}
+
+message Permission {
+  int32 id = 1;
+  string key = 2;
+}
+
+message ListPermissionsRequest {
+}
+
+message ListPermissionsResponse {
+  repeated Permission permissions = 1;
+}
+
+message AdminHasChannelAccessRequest {
+  uint64 user_id = 1;
+  repeated uint64 channel_id = 2;
+  // Ключ проверяемого пермишена; пустая строка = channel.read.
+  string permission = 3;
+}
+
+message Access {
+  uint64 channel_id = 1;
+  int32 status = 2; // -1 (< 0 - нет) / 0 - unknown / 1 (> 0 - да)
+}
+
+message AdminHasChannelAccessResponse {
+  repeated Access accesses = 1;
+}
+
+message AdminHasCategoryAccessRequest {
+  uint64 user_id = 1;
+  repeated uint64 category_id = 2;
+  // Ключ проверяемого пермишена; пустая строка = channel.read.
+  string permission = 3;
+}
+
+message AdminHasCategoryAccessResponse {
+  repeated Access accesses = 1;
+}
+
+// Пермишены пользователя в разрезе конкретного канала (с учётом override'ов).
+message ChannelPermissions {
+  uint64 channel_id = 1;
+  repeated PermissionState permissions = 2;
+}
+
+message AdminListUserPermissionsRequest {
+  uint64 user_id = 1;
+  uint64 server_id = 2;
+  // Каналы, для которых нужен срез с учётом override'ов (может быть пусто).
+  repeated uint64 channel_id = 3;
+}
+
+message AdminListUserPermissionsResponse {
+  // Базовый (серверный) срез пермишенов пользователя.
+  repeated PermissionState permissions = 1;
+  // Срезы по запрошенным каналам.
+  repeated ChannelPermissions channels = 2;
+}

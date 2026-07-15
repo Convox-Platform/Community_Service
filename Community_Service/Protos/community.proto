@@ -1,0 +1,257 @@
+syntax = "proto3";
+
+option csharp_namespace = "Community_Service";
+
+package community.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// В комьюнити минимум должен быть 1 категория и 1 текстовый канал.
+
+service CommunityService {
+  rpc ListCommunities (ListCommunitiesRequest) returns (ListCommunitiesResponse); // возвращает список community
+  rpc JoinCommunity (JoinCommunityRequest) returns (JoinCommunityResponse); //подключится к комьюнити по string-коду
+  rpc LeaveCommunity (LeaveCommunityRequest) returns (LeaveCommunityResponse); // покинуть по айди (uint64)
+  rpc CreateCommunity (CreateCommunityRequest) returns (CreateCommunityResponse); // создать комьюнити, принимает в себя название, аватарку (flie_service asset id) (nullable), список uint64 айди участников, которые будут добавлены в него, а так же айди шаблона (nullable). Если шаблон не задан - создает дефолтное.
+  rpc ListChannels (ListChannelsRequest) returns (ListChannelsResponse); // возвращает список каналов и категорий, к которым они пренадлежат по айди комьюнити
+  //подумаю чуть позже как правильнее сделать rpc GetMembers (GetMembersRequest) returns (GetMembersResponse); // возвращает список участников комьюнити по айди комьюнити пагинируемо, начиная от пользователей онлайн, заканчивая теми что офлайн.
+}
+
+service ChannelService {
+  rpc CreateChannel (CreateChannelRequest) returns (CreateChannelResponse); // создать канал в комьюнити, принимает в себя айди комьюнити, айди категории, название канала, тип. Проверяет есть ли у пользователя доступ к созданию каналов через permission сервис.
+  rpc GetChannelInfo (GetChannelInfoRequest) returns (GetChannelInfoResponse); // получить информацию о канале по айди канала и комьюнити
+  rpc EditChannel (EditChannelRequest) returns (EditChannelResponse); // редактировать канал в комьюнити, принимает в себя айди комьюнити, айди канала. Принимает в себя nullable данные, те что не null - изменить, пустые строки - обнулить (название, описание, категорию(например - перемещение), якорь (другой канал и положение относительно его (верх/низ), если не задано - будет первым в категории). Проверяет есть ли у пользователя доступ к редактированию каналов через permission сервис.
+  rpc DeleteChannel (DeleteChannelRequest) returns (DeleteChannelResponse); // удалить канал в комьюнити, принимает в себя айди комьюнити, айди канала. Проверяет есть ли у пользователя доступ к удалению каналов через permission сервис.
+}
+
+service CategoryService { //Пермишены те же что и для channel
+  rpc CreateCategory (CreateCategoryRequest) returns (CreateCategoryResponse); // создать категорию в комьюнити, принимает в себя айди комьюнити, название категории. Проверяет есть ли у пользователя доступ к созданию категорий через permission сервис.
+  rpc EditCategory (EditCategoryRequest) returns (EditCategoryResponse); // редактировать категорию в комьюнити, принимает в себя айди комьюнити, айди категории. Принимает в себя nullable данные, те что не null - изменить, пустые строки - обнулить (название). Проверяет есть ли у пользователя доступ к редактированию категорий через permission сервис.
+  rpc RemoveCategory (RemoveCategoryRequest) returns (RemoveCategoryResponse); // удалить категорию в комьюнити, принимает в себя айди комьюнити, айди категории. Проверяет есть ли у пользователя доступ к удалению категорий через permission сервис.
+}
+
+service MeetingService {
+  rpc CreateMeeting (CreateMeetingRequest) returns (CreateMeetingResponse); // создать митинг в комьюнити, принимает в себя айди комьюнити, айди канала, название митинга, описание митинга, дату и время начала митинга. Проверяет есть ли у пользователя доступ к созданию митингов через permission сервис.
+  rpc EditMeeting (EditMeetingRequest) returns (EditMeetingResponse); // редактировать митинг в комьюнити, принимает в себя айди комьюнити, айди канала, айди митинга. Принимает в себя nullable данные, те что не null - изменить, пустые строки - обнулить (название, описание, дату и время начала). Проверяет есть ли у пользователя доступ к редактированию митингов через permission сервис.
+  rpc DeleteMeeting (DeleteMeetingRequest) returns (DeleteMeetingResponse); // удалить митинг в комьюнити, принимает в себя айди комьюнити, айди канала, айди митинга. Проверяет есть ли у пользователя доступ к удалению митингов через permission сервис.
+  rpc ListMeetings (ListMeetingsRequest) returns (ListMeetingsResponse); // возвращает список митингов в комьюнити по айди комьюнити.
+}
+
+enum ChannelType {
+  UNSPECIFIED = 0;
+  TEXT = 1;
+  VOICE = 2;
+}
+
+message Community {
+  uint64 id = 1;
+  string name = 2;
+  string avatar = 3; // file_service asset id
+  string description = 4;
+  uint32 members_count = 5;
+}
+
+message Category {
+  uint64 id = 1;
+  uint64 community_id = 2;
+  string name = 3;
+  int32 position = 4; // порядок категории внутри комьюнити
+}
+
+message Channel {
+  uint64 id = 1;
+  uint64 community_id = 2;
+  uint64 category_id = 3; // 0 — канал вне категории
+  string name = 4;
+  ChannelType type = 5;
+  string description = 6;
+  int32 position = 7; // порядок канала внутри категории
+}
+
+message Meeting {
+  uint64 id = 1;
+  uint64 community_id = 2;
+  uint64 channel_id = 3;
+  string name = 4;
+  string description = 5;
+  google.protobuf.Timestamp start_at = 6;
+}
+
+// Якорь для позиционирования: разместить относительно другого канала.
+// Если anchor не задан — элемент становится первым в категории.
+enum AnchorPosition {
+  ANCHOR_POSITION_UNSPECIFIED = 0;
+  ANCHOR_POSITION_ABOVE = 1; // над якорным каналом
+  ANCHOR_POSITION_BELOW = 2; // под якорным каналом
+}
+
+message Anchor {
+  uint64 channel_id = 1; // канал, относительно которого позиционируем
+  AnchorPosition position = 2;
+}
+
+// ---------- CommunityService ----------
+
+// Список комьюнити текущего пользователя (пользователь берётся из JWT).
+message ListCommunitiesRequest {
+}
+
+message ListCommunitiesResponse {
+  repeated Community communities = 1;
+}
+
+message JoinCommunityRequest {
+  string code = 1; // код-приглашение
+}
+
+message JoinCommunityResponse {
+  Community community = 1;
+}
+
+message LeaveCommunityRequest {
+  uint64 community_id = 1;
+}
+
+message LeaveCommunityResponse {
+}
+
+message CreateCommunityRequest {
+  string name = 1;
+  optional string avatar = 2; // file_service asset id; не задано — без аватарки
+  repeated uint64 member_ids = 3; // участники, добавляемые сразу при создании
+  optional uint64 template_id = 4; // не задано — создаётся дефолтная структура
+}
+
+message CreateCommunityResponse {
+  Community community = 1;
+}
+
+// ---------- ListChannels (CommunityService) ----------
+
+message ListChannelsRequest {
+  uint64 community_id = 1;
+}
+
+message ListChannelsResponse {
+  repeated Category categories = 1;
+  repeated Channel channels = 2;
+}
+
+// ---------- ChannelService ----------
+
+message CreateChannelRequest {
+  uint64 community_id = 1;
+  uint64 category_id = 2; // 0 — создать вне категории
+  string name = 3;
+  ChannelType type = 4;
+}
+
+message CreateChannelResponse {
+  Channel channel = 1;
+}
+
+message GetChannelInfoRequest {
+  uint64 community_id = 1;
+  uint64 channel_id = 2;
+}
+
+message GetChannelInfoResponse {
+  Channel channel = 1;
+}
+
+message EditChannelRequest {
+  uint64 community_id = 1;
+  uint64 channel_id = 2;
+  // nullable-поля: не задано — не менять, пустая строка — обнулить.
+  optional string name = 3;
+  optional string description = 4;
+  optional uint64 category_id = 5; // перемещение в другую категорию (0 — вынести из категории)
+  optional Anchor anchor = 6; // позиция внутри категории; не задано — первым
+}
+
+message EditChannelResponse {
+  Channel channel = 1;
+}
+
+message DeleteChannelRequest {
+  uint64 community_id = 1;
+  uint64 channel_id = 2;
+}
+
+message DeleteChannelResponse {
+}
+
+// ---------- CategoryService ----------
+
+message CreateCategoryRequest {
+  uint64 community_id = 1;
+  string name = 2;
+}
+
+message CreateCategoryResponse {
+  Category category = 1;
+}
+
+message EditCategoryRequest {
+  uint64 community_id = 1;
+  uint64 category_id = 2;
+  // nullable: не задано — не менять, пустая строка — обнулить.
+  optional string name = 3;
+}
+
+message EditCategoryResponse {
+  Category category = 1;
+}
+
+message RemoveCategoryRequest {
+  uint64 community_id = 1;
+  uint64 category_id = 2;
+}
+
+message RemoveCategoryResponse {
+}
+
+// ---------- MeetingService ----------
+
+message CreateMeetingRequest {
+  uint64 community_id = 1;
+  uint64 channel_id = 2;
+  string name = 3;
+  string description = 4;
+  google.protobuf.Timestamp start_at = 5;
+}
+
+message CreateMeetingResponse {
+  Meeting meeting = 1;
+}
+
+message EditMeetingRequest {
+  uint64 community_id = 1;
+  uint64 channel_id = 2;
+  uint64 meeting_id = 3;
+  // nullable: не задано — не менять, пустая строка — обнулить.
+  optional string name = 4;
+  optional string description = 5;
+  optional google.protobuf.Timestamp start_at = 6;
+}
+
+message EditMeetingResponse {
+  Meeting meeting = 1;
+}
+
+message DeleteMeetingRequest {
+  uint64 community_id = 1;
+  uint64 channel_id = 2;
+  uint64 meeting_id = 3;
+}
+
+message DeleteMeetingResponse {
+}
+
+message ListMeetingsRequest {
+  uint64 community_id = 1;
+}
+
+message ListMeetingsResponse {
+  repeated Meeting meetings = 1;
+}
