@@ -5,8 +5,11 @@ option csharp_namespace = "Community_Service";
 package Channel_Service;
 
 // The greeting service definition.
-service Channel {
-  // Sends a greeting
+service Channel_Service {
+  rpc CreateChannel (ChannelRequest) returns (ChannelResponse);
+  rpc UpdateChannel (ChannelRequest) returns (ChannelResponse);
+  rpc DeleteChannel (ChannelRequest) returns (ChannelResponse);
+  rpc GetChannel (ChannelRequest) returns (ChannelResponse);
   
 }
 
@@ -18,7 +21,7 @@ message ChannelRequest {
 }
 
 message ChannelResponse {
-  string id = 1;
+  int64 id = 1;
   string name = 2;
   string type = 3;
   int64 ServerId = 4;
