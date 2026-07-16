@@ -8,8 +8,8 @@ package Channel_Service;
 service Channel_Service {
   rpc CreateChannel (ChannelRequest) returns (ChannelResponse);
   rpc UpdateChannel (ChannelRequest) returns (ChannelResponse);
-  rpc DeleteChannel (ChannelRequest) returns (ChannelResponse);
-  rpc GetChannel (ChannelRequest) returns (ChannelResponse);
+  rpc DeleteChannel (ChannelDeleteRequest) returns (LittelChannelResponse);
+  //rpc GetChannel (ChannelRequest) returns (ChannelResponse);
   
 }
 
@@ -25,4 +25,14 @@ message ChannelResponse {
   string name = 2;
   string type = 3;
   int64 ServerId = 4;
+}
+
+message ChannelDeleteRequest {
+  int64 id = 1;
+  string comand = 2; // команда для удаления канала, будет типа delete {channel_name}
+  string type = 3; // тип канала, будет типа text или voice
+}
+
+message LittelChannelResponse {
+  string message = 1;
 }
