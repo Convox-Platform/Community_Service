@@ -1,4 +1,5 @@
 using Community_Service.Events;
+using Community_Service.Ids;
 using Dapper;
 using Npgsql;
 
@@ -8,26 +9,32 @@ namespace Community_Service.Data
     {
         private readonly NpgsqlDataSource _db;
         private readonly OutboxWriter _outbox;
+        private readonly SnowflakeIdGenerator _ids;
 
-        public ChannelRepository(NpgsqlDataSource db, OutboxWriter outbox)
+        public ChannelRepository(
+            NpgsqlDataSource db,
+            OutboxWriter outbox,
+            SnowflakeIdGenerator ids)
         {
             _db = db;
             _outbox = outbox;
+            _ids = ids;
         }
 
         public async Task<ChannelEntity> CreateAsync(
             long communityId, long? categoryId, string name, short type, ulong actorUserId)
         {
+            var channelId = _ids.NextId();
             await using var conn = await _db.OpenConnectionAsync();
             await using var tx = await conn.BeginTransactionAsync();
             var channel = await conn.QuerySingleAsync<ChannelEntity>(
-                @"INSERT INTO channels (community_id, category_id, name, type, position)
-                  VALUES (@communityId, @categoryId, @name, @type,
+                @"INSERT INTO channels (id, community_id, category_id, name, type, position)
+                  VALUES (@channelId, @communityId, @categoryId, @name, @type,
                           COALESCE((SELECT MAX(position) + 1 FROM channels
                                     WHERE community_id = @communityId
                                       AND category_id IS NOT DISTINCT FROM @categoryId), 0))
                   RETURNING *;",
-                new { communityId, categoryId, name, type }, tx);
+                new { channelId, communityId, categoryId, name, type }, tx);
             await _outbox.EnqueueAsync(conn, tx,
                 CommunityEventFactory.ChannelCreated(channel, actorUserId));
             await tx.CommitAsync();

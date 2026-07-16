@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text;
 using Community_Service.Data;
 using Community_Service.Events;
+using Community_Service.Ids;
 using Community_Service.Permissions;
 using Community_Service.Services;
 using Dapper;
@@ -31,6 +32,15 @@ namespace Community_Service
                 ?? throw new ArgumentNullException("PERMISSION_SERVICE_URL not found");
             var amqpUrl = Environment.GetEnvironmentVariable("AMQP_URL")
                 ?? throw new ArgumentNullException("AMQP_URL not found");
+            var workerIdValue = Environment.GetEnvironmentVariable("SNOWFLAKE_WORKER_ID") ?? "0";
+            if (!int.TryParse(workerIdValue, out var workerId) ||
+                workerId is < 0 or > SnowflakeIdGenerator.MaxWorkerId)
+            {
+                throw new ArgumentOutOfRangeException(
+                    "SNOWFLAKE_WORKER_ID",
+                    workerIdValue,
+                    $"SNOWFLAKE_WORKER_ID must be an integer between 0 and {SnowflakeIdGenerator.MaxWorkerId}");
+            }
             var rabbitMqExchange = Environment.GetEnvironmentVariable("RABBITMQ_EXCHANGE")
                 ?? RabbitMqOptions.DefaultExchange;
             var grpcReflectionEnabled = string.Equals(
@@ -39,9 +49,6 @@ namespace Community_Service
 
             // Столбцы snake_case маппятся на PascalCase-свойства сущностей.
             DefaultTypeMap.MatchNamesWithUnderscores = true;
-            // user_id (uint64) хранится в bigint через битовый проброс ulong <-> long.
-            SqlMapper.AddTypeHandler(new UInt64TypeHandler());
-
             EnsureDatabase.For.PostgresqlDatabase(constr);
             var upgrader = DeployChanges.To
                 .PostgresqlDatabase(constr)
@@ -59,6 +66,7 @@ namespace Community_Service
             var builder = WebApplication.CreateBuilder(args);
 
             builder.Services.AddSingleton(NpgsqlDataSource.Create(constr));
+            builder.Services.AddSingleton(new SnowflakeIdGenerator(workerId));
             builder.Services.AddScoped<CommunityRepository>();
             builder.Services.AddScoped<MemberRepository>();
             builder.Services.AddScoped<CategoryRepository>();

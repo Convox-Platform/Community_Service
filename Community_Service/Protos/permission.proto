@@ -42,6 +42,8 @@ message Role {
   string name = 3;
   int32 weight = 4;
   repeated PermissionState permissions = 5;
+  uint32 color = 6; // RGB: 0x000000..0xFFFFFF
+  uint32 flags = 7; // LOCKED=1, HIDDEN=2, SYSTEM=4
 }
 
 message AdminListRolesRequest {
@@ -55,6 +57,7 @@ message AdminListRolesResponse {
 message AdminCreateRoleRequest {
   uint64 server_id = 1;
   optional string role_name = 2;
+  optional uint32 color = 3;
 }
 
 message AdminCreateRoleResponse {
@@ -82,6 +85,7 @@ message AdminTakeRoleResponse {
 message AdminEditRoleRequest {
   uint64 role_id = 1;
   optional string role_name = 2;
+  optional uint32 color = 3;
 }
 
 message AdminEditRoleResponse {
@@ -156,6 +160,7 @@ message AdminHasChannelAccessRequest {
   repeated uint64 channel_id = 2;
   // Ключ проверяемого пермишена; пустая строка = channel.read.
   string permission = 3;
+  uint64 server_id = 4;
 }
 
 message Access {
@@ -172,6 +177,7 @@ message AdminHasCategoryAccessRequest {
   repeated uint64 category_id = 2;
   // Ключ проверяемого пермишена; пустая строка = channel.read.
   string permission = 3;
+  uint64 server_id = 4;
 }
 
 message AdminHasCategoryAccessResponse {

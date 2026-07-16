@@ -1,6 +1,6 @@
 CREATE TABLE communities
 (
-    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id          BIGINT PRIMARY KEY,
     name        TEXT        NOT NULL,
     avatar      TEXT        NULL,
     description TEXT        NOT NULL DEFAULT '',
@@ -27,7 +27,7 @@ CREATE TABLE categories
 
 CREATE TABLE channels
 (
-    id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id           BIGINT PRIMARY KEY,
     community_id BIGINT   NOT NULL REFERENCES communities (id) ON DELETE CASCADE,
     -- NULL = канал вне категории; при удалении категории каналы становятся вне категории.
     category_id  BIGINT   NULL REFERENCES categories (id) ON DELETE SET NULL,

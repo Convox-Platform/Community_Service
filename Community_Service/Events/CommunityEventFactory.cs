@@ -16,7 +16,7 @@ public static class CommunityEventFactory
                 Community = new CommunitySnapshot
                 {
                     Community = community.ToProto(),
-                    OwnerUserId = community.OwnerId,
+                    OwnerUserId = UInt64Storage.ToUInt64(community.OwnerId),
                     CreatedAt = ToTimestamp(community.CreatedAt)
                 }
             },
@@ -30,12 +30,12 @@ public static class CommunityEventFactory
                 {
                     Id = (ulong)member.Id,
                     CommunityId = (ulong)member.CommunityId,
-                    UserId = member.UserId,
+                    UserId = UInt64Storage.ToUInt64(member.UserId),
                     JoinedAt = ToTimestamp(member.JoinedAt)
                 }
             },
             RoutingKeys.Community(member.CommunityId, "member.left"),
-            RoutingKeys.User(member.UserId, "membership.left"));
+            RoutingKeys.User(UInt64Storage.ToUInt64(member.UserId), "membership.left"));
 
     public static OutboxMessage ChannelCreated(ChannelEntity channel, ulong actorUserId) =>
         Build(channel.CommunityId, actorUserId,

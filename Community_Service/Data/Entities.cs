@@ -8,7 +8,7 @@ namespace Community_Service.Data
         public string Name { get; set; } = "";
         public string? Avatar { get; set; }
         public string Description { get; set; } = "";
-        public ulong OwnerId { get; set; }
+        public long OwnerId { get; set; }
         public DateTime CreatedAt { get; set; }
         // Заполняется агрегатным подзапросом в списках, иначе 0.
         public int MembersCount { get; set; }
@@ -19,7 +19,7 @@ namespace Community_Service.Data
     {
         public long Id { get; set; }
         public long CommunityId { get; set; }
-        public ulong UserId { get; set; }
+        public long UserId { get; set; }
         public DateTime JoinedAt { get; set; }
     }
 
