@@ -1,4 +1,5 @@
 using Dapper;
+using Community_Service.Events;
 using Npgsql;
 
 namespace Community_Service.Data
@@ -6,8 +7,13 @@ namespace Community_Service.Data
     public class CommunityRepository
     {
         private readonly NpgsqlDataSource _db;
+        private readonly OutboxWriter _outbox;
 
-        public CommunityRepository(NpgsqlDataSource db) => _db = db;
+        public CommunityRepository(NpgsqlDataSource db, OutboxWriter outbox)
+        {
+            _db = db;
+            _outbox = outbox;
+        }
 
         // Создаёт комьюнити вместе с владельцем-участником, переданными участниками
         // и дефолтной структурой (1 категория + 1 текстовый канал) в одной транзакции.
@@ -43,9 +49,11 @@ namespace Community_Service.Data
                   VALUES (@cid, @catId, @name, @type, 0);",
                 new { cid = community.Id, catId = categoryId, name = "общий", type = (short)ChannelType.Text }, tx);
 
+            community.MembersCount = members.Count;
+            await _outbox.EnqueueAsync(conn, tx,
+                CommunityEventFactory.CommunityCreated(community, ownerId));
             await tx.CommitAsync();
 
-            community.MembersCount = members.Count;
             return community;
         }
 

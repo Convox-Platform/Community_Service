@@ -37,7 +37,7 @@ namespace Community_Service.Services
 
             var meeting = await _meetings.CreateAsync(
                 communityId, (long)request.ChannelId, request.Name, request.Description,
-                request.StartAt.ToDateTime());
+                request.StartAt.ToDateTime(), userId);
 
             return new CreateMeetingResponse { Meeting = meeting.ToProto() };
         }
@@ -51,11 +51,18 @@ namespace Community_Service.Services
 
             await LoadMeetingAsync((long)request.MeetingId, communityId);
 
+            var changedFields = new List<string>();
+            if (request.HasName) changedFields.Add("name");
+            if (request.HasDescription) changedFields.Add("description");
+            if (request.StartAt is not null) changedFields.Add("start_at");
+
             var meeting = await _meetings.UpdateAsync(
                 (long)request.MeetingId,
                 request.HasName ? request.Name : null,
                 request.HasDescription ? request.Description : null,
-                request.StartAt?.ToDateTime());
+                request.StartAt?.ToDateTime(),
+                userId,
+                changedFields);
 
             return new EditMeetingResponse { Meeting = meeting.ToProto() };
         }
@@ -68,7 +75,7 @@ namespace Community_Service.Services
             await _guard.EnsureCanManageMeetingsAsync(userId, communityId);
 
             var meeting = await LoadMeetingAsync((long)request.MeetingId, communityId);
-            await _meetings.DeleteAsync(meeting.Id);
+            await _meetings.DeleteAsync(meeting.Id, userId);
             return new DeleteMeetingResponse();
         }
 

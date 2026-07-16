@@ -1,4 +1,5 @@
 using Dapper;
+using Community_Service.Events;
 using Npgsql;
 
 namespace Community_Service.Data
@@ -7,8 +8,13 @@ namespace Community_Service.Data
     public class MemberRepository
     {
         private readonly NpgsqlDataSource _db;
+        private readonly OutboxWriter _outbox;
 
-        public MemberRepository(NpgsqlDataSource db) => _db = db;
+        public MemberRepository(NpgsqlDataSource db, OutboxWriter outbox)
+        {
+            _db = db;
+            _outbox = outbox;
+        }
 
         // Добавляет участника (идемпотентно) и возвращает его запись.
         public async Task<MemberEntity> AddAsync(long communityId, ulong userId)
@@ -25,11 +31,23 @@ namespace Community_Service.Data
         public async Task<bool> RemoveAsync(long communityId, ulong userId)
         {
             await using var conn = await _db.OpenConnectionAsync();
-            var affected = await conn.ExecuteAsync(
+            await using var tx = await conn.BeginTransactionAsync();
+            var member = await conn.QuerySingleOrDefaultAsync<MemberEntity>(
+                @"SELECT * FROM community_members
+                  WHERE community_id = @communityId AND user_id = @userId
+                  FOR UPDATE;",
+                new { communityId, userId }, tx);
+            if (member is null)
+                return false;
+
+            await conn.ExecuteAsync(
                 @"DELETE FROM community_members
                   WHERE community_id = @communityId AND user_id = @userId;",
-                new { communityId, userId });
-            return affected > 0;
+                new { communityId, userId }, tx);
+            await _outbox.EnqueueAsync(conn, tx,
+                CommunityEventFactory.MemberLeft(member, userId));
+            await tx.CommitAsync();
+            return true;
         }
 
         public async Task<bool> ExistsAsync(long communityId, ulong userId)

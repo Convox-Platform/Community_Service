@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+option csharp_namespace = "Community_Service.Events.Contracts";
+
+package community.events.v1;
+
+import "Protos/community.proto";
+import "google/protobuf/timestamp.proto";
+
+message EventEnvelope {
+  string event_id = 1;
+  string correlation_id = 2;
+  google.protobuf.Timestamp occurred_at = 3;
+  uint64 actor_user_id = 4;
+  uint64 community_id = 5;
+  uint32 schema_version = 6;
+
+  oneof payload {
+    CommunityCreated community_created = 10;
+    MemberLeft member_left = 11;
+    ChannelCreated channel_created = 12;
+    ChannelUpdated channel_updated = 13;
+    ChannelDeleted channel_deleted = 14;
+    CategoryCreated category_created = 15;
+    CategoryUpdated category_updated = 16;
+    CategoryDeleted category_deleted = 17;
+    MeetingCreated meeting_created = 18;
+    MeetingUpdated meeting_updated = 19;
+    MeetingDeleted meeting_deleted = 20;
+  }
+}
+
+message MemberSnapshot {
+  uint64 id = 1;
+  uint64 community_id = 2;
+  uint64 user_id = 3;
+  google.protobuf.Timestamp joined_at = 4;
+}
+
+message CommunitySnapshot {
+  community.v1.Community community = 1;
+  uint64 owner_user_id = 2;
+  google.protobuf.Timestamp created_at = 3;
+}
+
+message CommunityCreated { CommunitySnapshot community = 1; }
+message MemberLeft { MemberSnapshot member = 1; }
+message ChannelCreated { community.v1.Channel channel = 1; }
+message ChannelUpdated {
+  community.v1.Channel channel = 1;
+  repeated string changed_fields = 2;
+}
+message ChannelDeleted { community.v1.Channel channel = 1; }
+message CategoryCreated { community.v1.Category category = 1; }
+message CategoryUpdated {
+  community.v1.Category category = 1;
+  repeated string changed_fields = 2;
+}
+message CategoryDeleted { community.v1.Category category = 1; }
+message MeetingCreated { community.v1.Meeting meeting = 1; }
+message MeetingUpdated {
+  community.v1.Meeting meeting = 1;
+  repeated string changed_fields = 2;
+}
+message MeetingDeleted { community.v1.Meeting meeting = 1; }

@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Security.Claims;
 using System.Text;
 using Community_Service.Data;
+using Community_Service.Events;
 using Community_Service.Permissions;
 using Community_Service.Services;
 using Dapper;
@@ -28,6 +29,10 @@ namespace Community_Service
                 ?? throw new ArgumentNullException("ORIGIN not found");
             var permissionServiceUrl = Environment.GetEnvironmentVariable("PERMISSION_SERVICE_URL")
                 ?? throw new ArgumentNullException("PERMISSION_SERVICE_URL not found");
+            var amqpUrl = Environment.GetEnvironmentVariable("AMQP_URL")
+                ?? throw new ArgumentNullException("AMQP_URL not found");
+            var rabbitMqExchange = Environment.GetEnvironmentVariable("RABBITMQ_EXCHANGE")
+                ?? RabbitMqOptions.DefaultExchange;
             var grpcReflectionEnabled = string.Equals(
                 Environment.GetEnvironmentVariable("GRPC_REFLECTION_ENABLED"),
                 "true", StringComparison.OrdinalIgnoreCase);
@@ -59,6 +64,14 @@ namespace Community_Service
             builder.Services.AddScoped<CategoryRepository>();
             builder.Services.AddScoped<ChannelRepository>();
             builder.Services.AddScoped<MeetingRepository>();
+            builder.Services.AddSingleton<OutboxWriter>();
+            builder.Services.AddSingleton<OutboxStore>();
+            builder.Services.AddSingleton(new RabbitMqOptions
+            {
+                AmqpUrl = new Uri(amqpUrl),
+                ExchangeName = rabbitMqExchange
+            });
+            builder.Services.AddHostedService<RabbitMqOutboxPublisher>();
             builder.Services.AddScoped<IPermissionGuard, PermissionGuard>();
 
             builder.Services

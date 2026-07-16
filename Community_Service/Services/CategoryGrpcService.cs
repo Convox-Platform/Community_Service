@@ -26,7 +26,7 @@ namespace Community_Service.Services
             if (string.IsNullOrWhiteSpace(request.Name))
                 throw new RpcException(new Status(StatusCode.InvalidArgument, "Name is required"));
 
-            var category = await _categories.CreateAsync(communityId, request.Name);
+            var category = await _categories.CreateAsync(communityId, request.Name, userId);
             return new CreateCategoryResponse { Category = category.ToProto() };
         }
 
@@ -42,7 +42,9 @@ namespace Community_Service.Services
             var category = await _categories.UpdateAsync(
                 (long)request.CategoryId,
                 request.HasName ? request.Name : null,
-                null);
+                null,
+                userId,
+                request.HasName ? ["name"] : []);
 
             return new EditCategoryResponse { Category = category.ToProto() };
         }
@@ -55,7 +57,7 @@ namespace Community_Service.Services
             await _guard.EnsureCanManageChannelsAsync(userId, communityId);
 
             var category = await LoadCategoryAsync((long)request.CategoryId, communityId);
-            await _categories.DeleteAsync(category.Id);
+            await _categories.DeleteAsync(category.Id, userId);
             return new RemoveCategoryResponse();
         }
 

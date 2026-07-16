@@ -34,7 +34,7 @@ namespace Community_Service.Services
             var categoryId = await ResolveCategoryAsync(request.CategoryId, communityId);
 
             var channel = await _channels.CreateAsync(
-                communityId, categoryId, request.Name, (short)request.Type);
+                communityId, categoryId, request.Name, (short)request.Type, userId);
 
             return new CreateChannelResponse { Channel = channel.ToProto() };
         }
@@ -58,25 +58,19 @@ namespace Community_Service.Services
             await _guard.EnsureCanManageChannelsAsync(userId, communityId);
 
             var channelId = (long)request.ChannelId;
-            await LoadChannelAsync(channelId, communityId);
-
-            if (request.HasName || request.HasDescription)
-            {
-                await _channels.UpdateFieldsAsync(
-                    channelId,
-                    request.HasName ? request.Name : null,
-                    request.HasDescription ? request.Description : null);
-            }
+            var current = await LoadChannelAsync(channelId, communityId);
 
             // Перемещение выполняется, если задана категория и/или якорь.
-            if (request.HasCategoryId || request.Anchor is not null)
+            var move = request.HasCategoryId || request.Anchor is not null;
+            long? targetCategory = current.CategoryId;
+            long? anchorId = null;
+            var below = false;
+            if (move)
             {
-                long? targetCategory = request.HasCategoryId
+                targetCategory = request.HasCategoryId
                     ? await ResolveCategoryAsync(request.CategoryId, communityId)
-                    : (await LoadChannelAsync(channelId, communityId)).CategoryId;
+                    : current.CategoryId;
 
-                long? anchorId = null;
-                var below = false;
                 if (request.Anchor is { } anchor)
                 {
                     var anchorChannel = await LoadChannelAsync((long)anchor.ChannelId, communityId);
@@ -84,10 +78,24 @@ namespace Community_Service.Services
                     below = anchor.Position == AnchorPosition.Below;
                 }
 
-                await _channels.MoveAsync(channelId, targetCategory, anchorId, below);
             }
 
-            var updated = await LoadChannelAsync(channelId, communityId);
+            var changedFields = new List<string>();
+            if (request.HasName) changedFields.Add("name");
+            if (request.HasDescription) changedFields.Add("description");
+            if (request.HasCategoryId) changedFields.Add("category_id");
+            if (move) changedFields.Add("position");
+
+            var updated = await _channels.UpdateAsync(
+                channelId,
+                request.HasName ? request.Name : null,
+                request.HasDescription ? request.Description : null,
+                move,
+                targetCategory,
+                anchorId,
+                below,
+                userId,
+                changedFields);
             return new EditChannelResponse { Channel = updated.ToProto() };
         }
 
@@ -99,7 +107,7 @@ namespace Community_Service.Services
             await _guard.EnsureCanManageChannelsAsync(userId, communityId);
 
             var channel = await LoadChannelAsync((long)request.ChannelId, communityId);
-            await _channels.DeleteAsync(channel.Id);
+            await _channels.DeleteAsync(channel.Id, userId);
             return new DeleteChannelResponse();
         }
 

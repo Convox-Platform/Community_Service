@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <Protobuf Include="Protos\community.proto" GrpcServices="Server" />
+    <Protobuf Include="Protos\community_events.proto" GrpcServices="None" />
     <Protobuf Include="Protos\permission.proto" GrpcServices="Client" />
   </ItemGroup>
 
@@ -30,6 +31,7 @@
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.28" />
     <PackageReference Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.22.1" />
     <PackageReference Include="Npgsql" Version="10.0.3" />
+    <PackageReference Include="RabbitMQ.Client" Version="7.2.1" />
   </ItemGroup>
 
   <ItemGroup>
