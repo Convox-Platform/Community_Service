@@ -9,6 +9,8 @@ namespace Community_Service.Permissions
     {
         public const string ManageChannels = "channel.manage";
         public const string ManageMeetings = "meeting.manage";
+        public const string CreateInvite = "community.invite";
+        public const string CommunityAdmin = "community.admin";
     }
 
     public interface IPermissionGuard
@@ -17,6 +19,8 @@ namespace Community_Service.Permissions
         Task EnsureMemberAsync(ulong userId, long communityId);
         Task EnsureCanManageChannelsAsync(ulong userId, long communityId);
         Task EnsureCanManageMeetingsAsync(ulong userId, long communityId);
+        Task EnsureCanCreateInviteAsync(ulong userId, long communityId);
+        Task EnsureCommunityAdminAsync(ulong userId, long communityId);
     }
 
     public class PermissionGuard : IPermissionGuard
@@ -49,6 +53,12 @@ namespace Community_Service.Permissions
 
         public Task EnsureCanManageMeetingsAsync(ulong userId, long communityId) =>
             EnsurePermissionAsync(userId, communityId, PermissionKeys.ManageMeetings);
+
+        public Task EnsureCanCreateInviteAsync(ulong userId, long communityId) =>
+            EnsurePermissionAsync(userId, communityId, PermissionKeys.CreateInvite);
+
+        public Task EnsureCommunityAdminAsync(ulong userId, long communityId) =>
+            EnsurePermissionAsync(userId, communityId, PermissionKeys.CommunityAdmin);
 
         private async Task EnsurePermissionAsync(ulong userId, long communityId, string key)
         {

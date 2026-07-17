@@ -51,4 +51,22 @@ namespace Community_Service.Data
         public string Description { get; set; } = "";
         public DateTime StartAt { get; set; }
     }
+
+    public class InviteEntity
+    {
+        public string Code { get; set; } = "";
+        public long CommunityId { get; set; }
+        public long CreatorUserId { get; set; }
+        public int? MaxUses { get; set; }
+        public int UsesCount { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
+
+    public class InviteAttributionEntity
+    {
+        public long UserId { get; set; }
+        public string InviteCode { get; set; } = "";
+        public DateTime LastJoinedAt { get; set; }
+        public bool IsCurrentMember { get; set; }
+    }
 }

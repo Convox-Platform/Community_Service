@@ -37,6 +37,23 @@ public static class CommunityEventFactory
             RoutingKeys.Community(member.CommunityId, "member.left"),
             RoutingKeys.User(UInt64Storage.ToUInt64(member.UserId), "membership.left"));
 
+    public static OutboxMessage MemberJoined(
+        MemberEntity member, ulong actorUserId, string inviteCode) =>
+        Build(member.CommunityId, actorUserId,
+            new MemberJoined
+            {
+                Member = new MemberSnapshot
+                {
+                    Id = (ulong)member.Id,
+                    CommunityId = (ulong)member.CommunityId,
+                    UserId = UInt64Storage.ToUInt64(member.UserId),
+                    JoinedAt = ToTimestamp(member.JoinedAt)
+                },
+                InviteCode = inviteCode
+            },
+            RoutingKeys.Community(member.CommunityId, "member.joined"),
+            RoutingKeys.User(UInt64Storage.ToUInt64(member.UserId), "membership.joined"));
+
     public static OutboxMessage ChannelCreated(ChannelEntity channel, ulong actorUserId) =>
         Build(channel.CommunityId, actorUserId,
             new ChannelCreated { Channel = channel.ToProto() },
@@ -113,6 +130,7 @@ public static class CommunityEventFactory
         {
             case CommunityCreated value: envelope.CommunityCreated = value; break;
             case MemberLeft value: envelope.MemberLeft = value; break;
+            case MemberJoined value: envelope.MemberJoined = value; break;
             case ChannelCreated value: envelope.ChannelCreated = value; break;
             case ChannelUpdated value: envelope.ChannelUpdated = value; break;
             case ChannelDeleted value: envelope.ChannelDeleted = value; break;

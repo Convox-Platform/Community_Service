@@ -43,5 +43,29 @@ namespace Community_Service.Services
             Description = e.Description,
             StartAt = Timestamp.FromDateTime(DateTime.SpecifyKind(e.StartAt, DateTimeKind.Utc))
         };
+
+        public static CommunityInvite ToProto(this InviteEntity e)
+        {
+            var invite = new CommunityInvite
+            {
+                Code = e.Code,
+                CommunityId = (ulong)e.CommunityId,
+                CreatorUserId = UInt64Storage.ToUInt64(e.CreatorUserId),
+                UsesCount = (uint)e.UsesCount,
+                CreatedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(e.CreatedAt, DateTimeKind.Utc)),
+                IsValid = e.MaxUses is null || e.UsesCount < e.MaxUses
+            };
+            if (e.MaxUses is { } maxUses)
+                invite.MaxUses = (uint)maxUses;
+            return invite;
+        }
+
+        public static InviteAttribution ToProto(this InviteAttributionEntity e) => new()
+        {
+            UserId = UInt64Storage.ToUInt64(e.UserId),
+            InviteCode = e.InviteCode,
+            LastJoinedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(e.LastJoinedAt, DateTimeKind.Utc)),
+            IsCurrentMember = e.IsCurrentMember
+        };
     }
 }

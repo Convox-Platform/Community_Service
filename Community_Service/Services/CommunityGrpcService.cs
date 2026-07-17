@@ -1,5 +1,6 @@
 using Community_Service.Auth;
 using Community_Service.Data;
+using Community_Service.Invites;
 using Community_Service.Permissions;
 using Grpc.Core;
 
@@ -11,6 +12,7 @@ namespace Community_Service.Services
         private readonly MemberRepository _members;
         private readonly CategoryRepository _categories;
         private readonly ChannelRepository _channels;
+        private readonly InviteRepository _invites;
         private readonly IPermissionGuard _guard;
 
         public CommunityGrpcService(
@@ -18,12 +20,14 @@ namespace Community_Service.Services
             MemberRepository members,
             CategoryRepository categories,
             ChannelRepository channels,
+            InviteRepository invites,
             IPermissionGuard guard)
         {
             _communities = communities;
             _members = members;
             _categories = categories;
             _channels = channels;
+            _invites = invites;
             _guard = guard;
         }
 
@@ -38,11 +42,76 @@ namespace Community_Service.Services
             return response;
         }
 
-        public override Task<JoinCommunityResponse> JoinCommunity(
-            JoinCommunityRequest request, ServerCallContext context)
+        public override async Task<CreateInviteResponse> CreateInvite(
+            CreateInviteRequest request, ServerCallContext context)
         {
-            // Вступление по коду-приглашению появится вместе с сущностью инвайтов.
-            throw new RpcException(new Status(StatusCode.Unimplemented, "Invites are not implemented yet"));
+            var userId = context.GetUserId();
+            var communityId = (long)request.CommunityId;
+            if (request.HasMaxUses && (request.MaxUses == 0 || request.MaxUses > int.MaxValue))
+                throw new RpcException(new Status(StatusCode.InvalidArgument, "max_uses must be between 1 and 2147483647"));
+
+            await _guard.EnsureCanCreateInviteAsync(userId, communityId);
+            var invite = await _invites.CreateAsync(
+                communityId, userId, request.HasMaxUses ? (int)request.MaxUses : null);
+            return new CreateInviteResponse { Invite = invite.ToProto() };
+        }
+
+        public override async Task<ListInvitesResponse> ListInvites(
+            ListInvitesRequest request, ServerCallContext context)
+        {
+            var userId = context.GetUserId();
+            var communityId = (long)request.CommunityId;
+            await _guard.EnsureCommunityAdminAsync(userId, communityId);
+
+            var response = new ListInvitesResponse();
+            response.Invites.AddRange((await _invites.ListAsync(communityId)).Select(i => i.ToProto()));
+            return response;
+        }
+
+        public override async Task<DeleteInviteResponse> DeleteInvite(
+            DeleteInviteRequest request, ServerCallContext context)
+        {
+            if (!InviteCodeGenerator.IsValid(request.Code))
+                throw new RpcException(new Status(StatusCode.InvalidArgument, "Invalid invite code"));
+
+            var userId = context.GetUserId();
+            var communityId = (long)request.CommunityId;
+            await _guard.EnsureCommunityAdminAsync(userId, communityId);
+            if (!await _invites.DeleteAsync(communityId, request.Code))
+                throw new RpcException(new Status(StatusCode.NotFound, "Invite not found"));
+            return new DeleteInviteResponse();
+        }
+
+        public override async Task<AcceptInviteResponse> AcceptInvite(
+            AcceptInviteRequest request, ServerCallContext context)
+        {
+            if (!InviteCodeGenerator.IsValid(request.Code))
+                throw new RpcException(new Status(StatusCode.InvalidArgument, "Invalid invite code"));
+
+            var result = await _invites.AcceptAsync(request.Code, context.GetUserId());
+            return result.Status switch
+            {
+                InviteAcceptanceStatus.Accepted or InviteAcceptanceStatus.AlreadyMember =>
+                    new AcceptInviteResponse { Community = result.Community!.ToProto() },
+                InviteAcceptanceStatus.NotFound =>
+                    throw new RpcException(new Status(StatusCode.NotFound, "Invite not found")),
+                InviteAcceptanceStatus.LimitReached =>
+                    throw new RpcException(new Status(StatusCode.FailedPrecondition, "Invite usage limit reached")),
+                _ => throw new InvalidOperationException("Unknown invite acceptance status")
+            };
+        }
+
+        public override async Task<ListInviteAttributionsResponse> ListInviteAttributions(
+            ListInviteAttributionsRequest request, ServerCallContext context)
+        {
+            var userId = context.GetUserId();
+            var communityId = (long)request.CommunityId;
+            await _guard.EnsureCommunityAdminAsync(userId, communityId);
+
+            var response = new ListInviteAttributionsResponse();
+            response.Attributions.AddRange(
+                (await _invites.ListAttributionsAsync(communityId)).Select(a => a.ToProto()));
+            return response;
         }
 
         public override async Task<LeaveCommunityResponse> LeaveCommunity(

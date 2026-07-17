@@ -27,6 +27,7 @@ message EventEnvelope {
     MeetingCreated meeting_created = 18;
     MeetingUpdated meeting_updated = 19;
     MeetingDeleted meeting_deleted = 20;
+    MemberJoined member_joined = 21;
   }
 }
 
@@ -45,6 +46,10 @@ message CommunitySnapshot {
 
 message CommunityCreated { CommunitySnapshot community = 1; }
 message MemberLeft { MemberSnapshot member = 1; }
+message MemberJoined {
+  MemberSnapshot member = 1;
+  string invite_code = 2;
+}
 message ChannelCreated { community.v1.Channel channel = 1; }
 message ChannelUpdated {
   community.v1.Channel channel = 1;

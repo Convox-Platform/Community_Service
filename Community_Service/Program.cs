@@ -4,6 +4,7 @@ using System.Text;
 using Community_Service.Data;
 using Community_Service.Events;
 using Community_Service.Ids;
+using Community_Service.Invites;
 using Community_Service.Permissions;
 using Community_Service.Services;
 using Dapper;
@@ -67,11 +68,13 @@ namespace Community_Service
 
             builder.Services.AddSingleton(NpgsqlDataSource.Create(constr));
             builder.Services.AddSingleton(new SnowflakeIdGenerator(workerId));
+            builder.Services.AddSingleton<IInviteCodeGenerator, InviteCodeGenerator>();
             builder.Services.AddScoped<CommunityRepository>();
             builder.Services.AddScoped<MemberRepository>();
             builder.Services.AddScoped<CategoryRepository>();
             builder.Services.AddScoped<ChannelRepository>();
             builder.Services.AddScoped<MeetingRepository>();
+            builder.Services.AddScoped<InviteRepository>();
             builder.Services.AddSingleton<OutboxWriter>();
             builder.Services.AddSingleton<OutboxStore>();
             builder.Services.AddSingleton(new RabbitMqOptions
