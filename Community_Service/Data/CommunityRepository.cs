@@ -40,13 +40,18 @@ namespace Community_Service.Data
                 new { communityId, name, avatar, description, ownerId = storedOwnerId }, tx);
 
             var members = new HashSet<ulong>(memberIds) { ownerId };
+            var insertedMembers = new List<MemberEntity>(members.Count);
             foreach (var uid in members)
             {
                 var storedUserId = UInt64Storage.ToInt64(uid);
-                await conn.ExecuteAsync(
+                var member = await conn.QuerySingleOrDefaultAsync<MemberEntity>(
                     @"INSERT INTO community_members (community_id, user_id)
-                      VALUES (@cid, @uid) ON CONFLICT DO NOTHING;",
+                      VALUES (@cid, @uid)
+                      ON CONFLICT DO NOTHING
+                      RETURNING *;",
                     new { cid = community.Id, uid = storedUserId }, tx);
+                if (member is not null)
+                    insertedMembers.Add(member);
             }
 
             var categoryId = await conn.QuerySingleAsync<long>(
@@ -62,6 +67,11 @@ namespace Community_Service.Data
             community.MembersCount = members.Count;
             await _outbox.EnqueueAsync(conn, tx,
                 CommunityEventFactory.CommunityCreated(community, ownerId));
+            foreach (var member in insertedMembers)
+            {
+                await _outbox.EnqueueAsync(conn, tx,
+                    CommunityEventFactory.MemberJoined(member, ownerId, string.Empty));
+            }
             await tx.CommitAsync();
 
             return community;
