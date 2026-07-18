@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package presence.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option csharp_namespace = "Community_Service.Presence.Grpc";
+
+enum PresenceState {
+  PRESENCE_STATE_UNSPECIFIED = 0;
+  PRESENCE_STATE_OFFLINE = 1;
+  PRESENCE_STATE_ONLINE = 2;
+  PRESENCE_STATE_IDLE = 3;
+  PRESENCE_STATE_DO_NOT_DISTURB = 4;
+}
+
+enum PresencePreference {
+  PRESENCE_PREFERENCE_UNSPECIFIED = 0;
+  PRESENCE_PREFERENCE_AUTOMATIC = 1;
+  PRESENCE_PREFERENCE_ONLINE = 2;
+  PRESENCE_PREFERENCE_DO_NOT_DISTURB = 3;
+  PRESENCE_PREFERENCE_INVISIBLE = 4;
+}
+
+message PresenceSnapshot {
+  uint64 user_id = 1;
+  PresenceState state = 2;
+  uint64 version = 3;
+  google.protobuf.Timestamp changed_at = 4;
+  google.protobuf.Timestamp last_seen_at = 5;
+}
+
+service PresenceService {
+  rpc GetPresence(GetPresenceRequest) returns (GetPresenceResponse);
+  rpc BatchGetPresence(BatchGetPresenceRequest) returns (BatchGetPresenceResponse);
+  rpc SetPreference(SetPreferenceRequest) returns (SetPreferenceResponse);
+  rpc GetCommunityPresenceSummary(GetCommunityPresenceSummaryRequest) returns (GetCommunityPresenceSummaryResponse);
+  rpc ListCommunityOnline(ListCommunityOnlineRequest) returns (ListCommunityOnlineResponse);
+}
+
+message GetPresenceRequest { uint64 user_id = 1; }
+message GetPresenceResponse { PresenceSnapshot presence = 1; }
+message BatchGetPresenceRequest { repeated uint64 user_ids = 1; }
+message BatchGetPresenceResponse { repeated PresenceSnapshot presences = 1; }
+message SetPreferenceRequest { PresencePreference preference = 1; }
+message SetPreferenceResponse { PresenceSnapshot presence = 1; }
+
+message GetCommunityPresenceSummaryRequest { uint64 community_id = 1; }
+
+message CommunityPresenceSummary {
+  uint64 community_id = 1;
+  uint64 online_count = 2;
+}
+
+message GetCommunityPresenceSummaryResponse { CommunityPresenceSummary summary = 1; }
+
+message ListCommunityOnlineRequest {
+  uint64 community_id = 1;
+  uint64 cursor = 2;
+  uint32 limit = 3;
+}
+
+message ListCommunityOnlineResponse {
+  repeated PresenceSnapshot presences = 1;
+  uint64 next_cursor = 2;
+}

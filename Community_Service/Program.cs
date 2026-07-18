@@ -31,6 +31,8 @@ namespace Community_Service
                 ?? throw new ArgumentNullException("ORIGIN not found");
             var permissionServiceUrl = Environment.GetEnvironmentVariable("PERMISSION_SERVICE_URL")
                 ?? throw new ArgumentNullException("PERMISSION_SERVICE_URL not found");
+            var presenceServiceUrl = Environment.GetEnvironmentVariable("PRESENCE_SERVICE_URL")
+                ?? throw new ArgumentNullException("PRESENCE_SERVICE_URL not found");
             var amqpUrl = Environment.GetEnvironmentVariable("AMQP_URL")
                 ?? throw new ArgumentNullException("AMQP_URL not found");
             var workerIdValue = Environment.GetEnvironmentVariable("SNOWFLAKE_WORKER_ID") ?? "0";
@@ -88,6 +90,9 @@ namespace Community_Service
             builder.Services
                 .AddGrpcClient<Permissions.Grpc.PermissionService.PermissionServiceClient>(o =>
                     o.Address = new Uri(permissionServiceUrl));
+            builder.Services
+                .AddGrpcClient<Presence.Grpc.PresenceService.PresenceServiceClient>(o =>
+                    o.Address = new Uri(presenceServiceUrl));
 
             builder.Services.AddCors(options =>
             {

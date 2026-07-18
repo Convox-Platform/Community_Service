@@ -1,4 +1,5 @@
 using Community_Service.Data;
+using Community_Service.Presence.Grpc;
 using Google.Protobuf.WellKnownTypes;
 
 namespace Community_Service.Services
@@ -66,6 +67,13 @@ namespace Community_Service.Services
             InviteCode = e.InviteCode,
             LastJoinedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(e.LastJoinedAt, DateTimeKind.Utc)),
             IsCurrentMember = e.IsCurrentMember
+        };
+
+        public static CommunityMember ToProto(this MemberEntity e, PresenceSnapshot presence) => new()
+        {
+            UserId = UInt64Storage.ToUInt64(e.UserId),
+            JoinedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(e.JoinedAt, DateTimeKind.Utc)),
+            Presence = presence
         };
     }
 }

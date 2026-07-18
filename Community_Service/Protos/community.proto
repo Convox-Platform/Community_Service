@@ -5,6 +5,7 @@ option csharp_namespace = "Community_Service";
 package community.v1;
 
 import "google/protobuf/timestamp.proto";
+import "Protos/presence.proto";
 
 // В комьюнити минимум должен быть 1 категория и 1 текстовый канал.
 
@@ -18,7 +19,7 @@ service CommunityService {
   rpc LeaveCommunity (LeaveCommunityRequest) returns (LeaveCommunityResponse); // покинуть по айди (uint64)
   rpc CreateCommunity (CreateCommunityRequest) returns (CreateCommunityResponse); // создать комьюнити, принимает в себя название, аватарку (flie_service asset id) (nullable), список uint64 айди участников, которые будут добавлены в него, а так же айди шаблона (nullable). Если шаблон не задан - создает дефолтное.
   rpc ListChannels (ListChannelsRequest) returns (ListChannelsResponse); // возвращает список каналов и категорий, к которым они пренадлежат по айди комьюнити
-  //подумаю чуть позже как правильнее сделать rpc GetMembers (GetMembersRequest) returns (GetMembersResponse); // возвращает список участников комьюнити по айди комьюнити пагинируемо, начиная от пользователей онлайн, заканчивая теми что офлайн.
+  rpc GetMembers (GetMembersRequest) returns (GetMembersResponse);
 }
 
 service ChannelService {
@@ -79,6 +80,12 @@ message Meeting {
   string name = 4;
   string description = 5;
   google.protobuf.Timestamp start_at = 6;
+}
+
+message CommunityMember {
+  uint64 user_id = 1;
+  google.protobuf.Timestamp joined_at = 2;
+  presence.v1.PresenceSnapshot presence = 3;
 }
 
 message CommunityInvite {
@@ -178,6 +185,22 @@ message CreateCommunityRequest {
 
 message CreateCommunityResponse {
   Community community = 1;
+}
+
+// Участники всегда идут online-first. page_token непрозрачен для клиента и
+// автоматически переводит пагинацию с online-сегмента на offline-сегмент.
+message GetMembersRequest {
+  uint64 community_id = 1;
+  uint32 limit = 2;
+  string page_token = 3;
+}
+
+message GetMembersResponse {
+  repeated CommunityMember online_members = 1;
+  repeated CommunityMember offline_members = 2;
+  string next_page_token = 3;
+  uint64 total_members = 4;
+  uint64 online_count = 5;
 }
 
 // ---------- ListChannels (CommunityService) ----------

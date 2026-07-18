@@ -81,6 +81,37 @@ namespace Community_Service.Data
             return rows.AsList();
         }
 
+        public async Task<IReadOnlyList<MemberEntity>> ListByUserIdsAsync(
+            long communityId,
+            IReadOnlyCollection<ulong> userIds)
+        {
+            if (userIds.Count == 0)
+                return [];
+
+            var storedUserIds = userIds.Select(UInt64Storage.ToInt64).ToArray();
+            await using var conn = await _db.OpenConnectionAsync();
+            var rows = await conn.QueryAsync<MemberEntity>(
+                @"SELECT * FROM community_members
+                  WHERE community_id = @communityId AND user_id = ANY(@userIds);",
+                new { communityId, userIds = storedUserIds });
+            return rows.AsList();
+        }
+
+        public async Task<IReadOnlyList<MemberEntity>> ListPageAfterIdAsync(
+            long communityId,
+            long afterId,
+            int limit)
+        {
+            await using var conn = await _db.OpenConnectionAsync();
+            var rows = await conn.QueryAsync<MemberEntity>(
+                @"SELECT * FROM community_members
+                  WHERE community_id = @communityId AND id > @afterId
+                  ORDER BY id
+                  LIMIT @limit;",
+                new { communityId, afterId, limit });
+            return rows.AsList();
+        }
+
         public async Task<int> CountByCommunityAsync(long communityId)
         {
             await using var conn = await _db.OpenConnectionAsync();
