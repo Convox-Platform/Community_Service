@@ -31,10 +31,12 @@ namespace Community_Service.Services
             if (string.IsNullOrWhiteSpace(request.Name))
                 throw new RpcException(new Status(StatusCode.InvalidArgument, "Name is required"));
 
+            var bitrate = ValidateBitrate(request.Type, request.HasBitrate, request.Bitrate);
+
             var categoryId = await ResolveCategoryAsync(request.CategoryId, communityId);
 
             var channel = await _channels.CreateAsync(
-                communityId, categoryId, request.Name, (short)request.Type, userId);
+                communityId, categoryId, request.Name, (short)request.Type, bitrate, userId);
 
             return new CreateChannelResponse { Channel = channel.ToProto() };
         }
@@ -55,10 +57,12 @@ namespace Community_Service.Services
         {
             var userId = context.GetUserId();
             var communityId = (long)request.CommunityId;
-            await _guard.EnsureCanManageChannelsAsync(userId, communityId);
+            await _guard.EnsureCanEditChannelAsync(userId, communityId);
 
             var channelId = (long)request.ChannelId;
             var current = await LoadChannelAsync(channelId, communityId);
+            var bitrate = ValidateBitrate(
+                (ChannelType)current.Type, request.HasBitrate, request.Bitrate);
 
             // Перемещение выполняется, если задана категория и/или якорь.
             var move = request.HasCategoryId || request.Anchor is not null;
@@ -85,11 +89,13 @@ namespace Community_Service.Services
             if (request.HasDescription) changedFields.Add("description");
             if (request.HasCategoryId) changedFields.Add("category_id");
             if (move) changedFields.Add("position");
+            if (request.HasBitrate) changedFields.Add("bitrate");
 
             var updated = await _channels.UpdateAsync(
                 channelId,
                 request.HasName ? request.Name : null,
                 request.HasDescription ? request.Description : null,
+                bitrate,
                 move,
                 targetCategory,
                 anchorId,
@@ -109,6 +115,19 @@ namespace Community_Service.Services
             var channel = await LoadChannelAsync((long)request.ChannelId, communityId);
             await _channels.DeleteAsync(channel.Id, userId);
             return new DeleteChannelResponse();
+        }
+
+        private static int? ValidateBitrate(ChannelType type, bool hasBitrate, uint bitrate)
+        {
+            if (!hasBitrate)
+                return null;
+            if (type != ChannelType.Voice)
+                throw new RpcException(new Status(
+                    StatusCode.InvalidArgument, "Bitrate can only be set for voice channels"));
+            if (bitrate is 0 or > int.MaxValue)
+                throw new RpcException(new Status(
+                    StatusCode.InvalidArgument, "Bitrate must be between 1 and 2147483647 bit/s"));
+            return (int)bitrate;
         }
 
         private async Task<ChannelEntity> LoadChannelAsync(long channelId, long communityId)

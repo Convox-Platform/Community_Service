@@ -10,6 +10,7 @@ namespace Community_Service.Data
         public string Description { get; set; } = "";
         public long OwnerId { get; set; }
         public DateTime CreatedAt { get; set; }
+        public int SortOrder { get; set; }
         // Заполняется агрегатным подзапросом в списках, иначе 0.
         public int MembersCount { get; set; }
     }
@@ -21,6 +22,7 @@ namespace Community_Service.Data
         public long CommunityId { get; set; }
         public long UserId { get; set; }
         public DateTime JoinedAt { get; set; }
+        public int SortOrder { get; set; }
     }
 
     public class CategoryEntity
@@ -40,6 +42,7 @@ namespace Community_Service.Data
         public short Type { get; set; }
         public string Description { get; set; } = "";
         public int Position { get; set; }
+        public int? Bitrate { get; set; }
     }
 
     public class MeetingEntity

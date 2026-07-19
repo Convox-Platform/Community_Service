@@ -13,7 +13,8 @@ namespace Community_Service.Services
             Name = e.Name,
             Avatar = e.Avatar ?? string.Empty,
             Description = e.Description,
-            MembersCount = (uint)e.MembersCount
+            MembersCount = (uint)e.MembersCount,
+            SortOrder = (uint)e.SortOrder
         };
 
         public static Category ToProto(this CategoryEntity e) => new()
@@ -32,7 +33,8 @@ namespace Community_Service.Services
             Name = e.Name,
             Type = (ChannelType)e.Type,
             Description = e.Description,
-            Position = e.Position
+            Position = e.Position,
+            Bitrate = (uint)(e.Bitrate ?? 0)
         };
 
         public static Meeting ToProto(this MeetingEntity e) => new()

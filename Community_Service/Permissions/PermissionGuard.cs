@@ -8,6 +8,7 @@ namespace Community_Service.Permissions
     public static class PermissionKeys
     {
         public const string ManageChannels = "channel.manage";
+        public const string EditChannel = "channel.edit";
         public const string ManageMeetings = "meeting.manage";
         public const string CreateInvite = "community.invite";
         public const string CommunityAdmin = "community.admin";
@@ -18,6 +19,7 @@ namespace Community_Service.Permissions
         // Проверяет, что пользователь состоит в комьюнити. Иначе — RpcException.
         Task EnsureMemberAsync(ulong userId, long communityId);
         Task EnsureCanManageChannelsAsync(ulong userId, long communityId);
+        Task EnsureCanEditChannelAsync(ulong userId, long communityId);
         Task EnsureCanManageMeetingsAsync(ulong userId, long communityId);
         Task EnsureCanCreateInviteAsync(ulong userId, long communityId);
         Task EnsureCommunityAdminAsync(ulong userId, long communityId);
@@ -51,6 +53,10 @@ namespace Community_Service.Permissions
         public Task EnsureCanManageChannelsAsync(ulong userId, long communityId) =>
             EnsurePermissionAsync(userId, communityId, PermissionKeys.ManageChannels);
 
+        public Task EnsureCanEditChannelAsync(ulong userId, long communityId) =>
+            EnsureAnyPermissionAsync(
+                userId, communityId, PermissionKeys.EditChannel, PermissionKeys.ManageChannels);
+
         public Task EnsureCanManageMeetingsAsync(ulong userId, long communityId) =>
             EnsurePermissionAsync(userId, communityId, PermissionKeys.ManageMeetings);
 
@@ -60,7 +66,11 @@ namespace Community_Service.Permissions
         public Task EnsureCommunityAdminAsync(ulong userId, long communityId) =>
             EnsurePermissionAsync(userId, communityId, PermissionKeys.CommunityAdmin);
 
-        private async Task EnsurePermissionAsync(ulong userId, long communityId, string key)
+        private Task EnsurePermissionAsync(ulong userId, long communityId, string key) =>
+            EnsureAnyPermissionAsync(userId, communityId, key);
+
+        private async Task EnsureAnyPermissionAsync(
+            ulong userId, long communityId, params string[] keys)
         {
             var ownerId = await _communities.GetOwnerIdAsync(communityId)
                 ?? throw new RpcException(new Status(StatusCode.NotFound, "Community not found"));
@@ -79,9 +89,12 @@ namespace Community_Service.Permissions
                     ServerId = (ulong)communityId
                 });
 
-            var granted = response.Permissions.Any(p => p.Key == key && p.Status > 0);
+            var granted = response.Permissions.Any(
+                p => keys.Contains(p.Key, StringComparer.Ordinal) && p.Status > 0);
             if (!granted)
-                throw new RpcException(new Status(StatusCode.PermissionDenied, $"Missing permission: {key}"));
+                throw new RpcException(new Status(
+                    StatusCode.PermissionDenied,
+                    $"Missing permission: {string.Join(" or ", keys)}"));
         }
     }
 }

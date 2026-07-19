@@ -20,6 +20,7 @@ service CommunityService {
   rpc CreateCommunity (CreateCommunityRequest) returns (CreateCommunityResponse); // создать комьюнити, принимает в себя название, аватарку (flie_service asset id) (nullable), список uint64 айди участников, которые будут добавлены в него, а так же айди шаблона (nullable). Если шаблон не задан - создает дефолтное.
   rpc ListChannels (ListChannelsRequest) returns (ListChannelsResponse); // возвращает список каналов и категорий, к которым они пренадлежат по айди комьюнити
   rpc GetMembers (GetMembersRequest) returns (GetMembersResponse);
+  rpc SetCommunityPosition (SetCommunityPositionRequest) returns (SetCommunityPositionResponse);
 }
 
 service ChannelService {
@@ -54,6 +55,7 @@ message Community {
   string avatar = 3; // file_service asset id
   string description = 4;
   uint32 members_count = 5;
+  uint32 sort_order = 6; // позиция community в персональном списке пользователя; 0 — самая верхняя
 }
 
 message Category {
@@ -71,6 +73,7 @@ message Channel {
   ChannelType type = 5;
   string description = 6;
   int32 position = 7; // порядок канала внутри категории
+  uint32 bitrate = 8; // бит/с; 0 для неголосовых каналов
 }
 
 message Meeting {
@@ -126,6 +129,15 @@ message ListCommunitiesRequest {
 
 message ListCommunitiesResponse {
   repeated Community communities = 1;
+}
+
+message SetCommunityPositionRequest {
+  uint64 community_id = 1;
+  uint32 position = 2; // индекс от 0 до количества community пользователя минус один
+}
+
+message SetCommunityPositionResponse {
+  uint32 position = 1;
 }
 
 message CreateInviteRequest {
@@ -221,6 +233,7 @@ message CreateChannelRequest {
   uint64 category_id = 2; // 0 — создать вне категории
   string name = 3;
   ChannelType type = 4;
+  optional uint32 bitrate = 5; // только для VOICE; по умолчанию 64000 бит/с
 }
 
 message CreateChannelResponse {
@@ -244,6 +257,7 @@ message EditChannelRequest {
   optional string description = 4;
   optional uint64 category_id = 5; // перемещение в другую категорию (0 — вынести из категории)
   optional Anchor anchor = 6; // позиция внутри категории; не задано — первым
+  optional uint32 bitrate = 7; // только для VOICE, в бит/с
 }
 
 message EditChannelResponse {

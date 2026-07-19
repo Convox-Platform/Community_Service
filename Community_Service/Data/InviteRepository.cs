@@ -126,7 +126,8 @@ public sealed class InviteRepository
             new { invite.CommunityId, userId = storedUserId }, tx);
         if (existingMember is not null)
         {
-            var existingCommunity = await LoadCommunityAsync(conn, tx, invite.CommunityId);
+            var existingCommunity = await LoadCommunityAsync(
+                conn, tx, invite.CommunityId, storedUserId);
             await tx.CommitAsync();
             return new InviteAcceptanceResult(
                 InviteAcceptanceStatus.AlreadyMember, existingCommunity);
@@ -141,17 +142,15 @@ public sealed class InviteRepository
         if (!wasCounted && invite.MaxUses is { } maxUses && invite.UsesCount >= maxUses)
             return new InviteAcceptanceResult(InviteAcceptanceStatus.LimitReached);
 
-        var member = await conn.QuerySingleOrDefaultAsync<MemberEntity>(
-            @"INSERT INTO community_members (community_id, user_id)
-              VALUES (@communityId, @userId)
-              ON CONFLICT (community_id, user_id) DO NOTHING
-              RETURNING *;",
-            new { invite.CommunityId, userId = storedUserId }, tx);
+        var membership = await MembershipOrderStore.AddAtTopAsync(
+            conn, tx, invite.CommunityId, storedUserId);
+        var member = membership.Member;
 
         // A concurrent accept through another code may have inserted the membership first.
-        if (member is null)
+        if (!membership.Inserted)
         {
-            var concurrentCommunity = await LoadCommunityAsync(conn, tx, invite.CommunityId);
+            var concurrentCommunity = await LoadCommunityAsync(
+                conn, tx, invite.CommunityId, storedUserId);
             await tx.CommitAsync();
             return new InviteAcceptanceResult(
                 InviteAcceptanceStatus.AlreadyMember, concurrentCommunity);
@@ -181,16 +180,23 @@ public sealed class InviteRepository
 
         await _outbox.EnqueueAsync(conn, tx,
             CommunityEventFactory.MemberJoined(member, userId, code));
-        var community = await LoadCommunityAsync(conn, tx, invite.CommunityId);
+        var community = await LoadCommunityAsync(
+            conn, tx, invite.CommunityId, storedUserId);
         await tx.CommitAsync();
         return new InviteAcceptanceResult(InviteAcceptanceStatus.Accepted, community);
     }
 
     private static Task<CommunityEntity> LoadCommunityAsync(
-        NpgsqlConnection conn, NpgsqlTransaction tx, long communityId) =>
+        NpgsqlConnection conn,
+        NpgsqlTransaction tx,
+        long communityId,
+        long storedUserId) =>
         conn.QuerySingleAsync<CommunityEntity>(
-            @"SELECT c.*,
+            @"SELECT c.*, cm.sort_order,
                      (SELECT COUNT(*) FROM community_members m WHERE m.community_id = c.id) AS members_count
-              FROM communities c WHERE c.id = @communityId;",
-            new { communityId }, tx);
+              FROM communities c
+              JOIN community_members cm
+                ON cm.community_id = c.id AND cm.user_id = @userId
+              WHERE c.id = @communityId;",
+            new { communityId, userId = storedUserId }, tx);
 }

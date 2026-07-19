@@ -50,6 +50,36 @@ namespace Community_Service.Services
             return response;
         }
 
+        public override async Task<SetCommunityPositionResponse> SetCommunityPosition(
+            SetCommunityPositionRequest request, ServerCallContext context)
+        {
+            if (request.CommunityId == 0 || request.CommunityId > long.MaxValue)
+                throw new RpcException(new Status(StatusCode.InvalidArgument, "community_id is required"));
+            if (request.Position > int.MaxValue)
+                throw new RpcException(new Status(StatusCode.InvalidArgument, "position is out of range"));
+
+            var userId = context.GetUserId();
+            var communityId = (long)request.CommunityId;
+            await _guard.EnsureMemberAsync(userId, communityId);
+
+            var result = await _members.SetPositionAsync(
+                communityId,
+                userId,
+                (int)request.Position);
+            return result.Status switch
+            {
+                SetMemberPositionStatus.Success => new SetCommunityPositionResponse
+                {
+                    Position = (uint)result.Position
+                },
+                SetMemberPositionStatus.OutOfRange =>
+                    throw new RpcException(new Status(StatusCode.InvalidArgument, "position is out of range")),
+                SetMemberPositionStatus.NotMember =>
+                    throw new RpcException(new Status(StatusCode.PermissionDenied, "Not a member of the community")),
+                _ => throw new InvalidOperationException("Unknown community position result")
+            };
+        }
+
         public override async Task<CreateInviteResponse> CreateInvite(
             CreateInviteRequest request, ServerCallContext context)
         {

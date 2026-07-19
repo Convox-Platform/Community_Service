@@ -7,6 +7,8 @@ namespace Community_Service.Data
 {
     public class ChannelRepository
     {
+        public const int DefaultVoiceBitrate = 64_000;
+
         private readonly NpgsqlDataSource _db;
         private readonly OutboxWriter _outbox;
         private readonly SnowflakeIdGenerator _ids;
@@ -22,19 +24,30 @@ namespace Community_Service.Data
         }
 
         public async Task<ChannelEntity> CreateAsync(
-            long communityId, long? categoryId, string name, short type, ulong actorUserId)
+            long communityId, long? categoryId, string name, short type, int? bitrate,
+            ulong actorUserId)
         {
             var channelId = _ids.NextId();
             await using var conn = await _db.OpenConnectionAsync();
             await using var tx = await conn.BeginTransactionAsync();
             var channel = await conn.QuerySingleAsync<ChannelEntity>(
-                @"INSERT INTO channels (id, community_id, category_id, name, type, position)
+                @"INSERT INTO channels (id, community_id, category_id, name, type, bitrate, position)
                   VALUES (@channelId, @communityId, @categoryId, @name, @type,
+                          CASE WHEN @type = 2 THEN COALESCE(@bitrate, @defaultVoiceBitrate) ELSE NULL END,
                           COALESCE((SELECT MAX(position) + 1 FROM channels
                                     WHERE community_id = @communityId
                                       AND category_id IS NOT DISTINCT FROM @categoryId), 0))
                   RETURNING *;",
-                new { channelId, communityId, categoryId, name, type }, tx);
+                new
+                {
+                    channelId,
+                    communityId,
+                    categoryId,
+                    name,
+                    type,
+                    bitrate,
+                    defaultVoiceBitrate = DefaultVoiceBitrate
+                }, tx);
             await _outbox.EnqueueAsync(conn, tx,
                 CommunityEventFactory.ChannelCreated(channel, actorUserId));
             await tx.CommitAsync();
@@ -62,6 +75,7 @@ namespace Community_Service.Data
             long channelId,
             string? name,
             string? description,
+            int? bitrate,
             bool move,
             long? targetCategoryId,
             long? anchorChannelId,
@@ -78,9 +92,10 @@ namespace Community_Service.Data
             await conn.ExecuteAsync(
                 @"UPDATE channels
                   SET name = COALESCE(@name, name),
-                      description = COALESCE(@description, description)
+                      description = COALESCE(@description, description),
+                      bitrate = COALESCE(@bitrate, bitrate)
                   WHERE id = @channelId;",
-                new { channelId, name, description }, tx);
+                new { channelId, name, description, bitrate }, tx);
 
             if (move)
             {

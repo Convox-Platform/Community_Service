@@ -4,6 +4,17 @@ using Npgsql;
 
 namespace Community_Service.Data
 {
+    public enum SetMemberPositionStatus
+    {
+        Success,
+        NotMember,
+        OutOfRange
+    }
+
+    public readonly record struct SetMemberPositionResult(
+        SetMemberPositionStatus Status,
+        int Position = 0);
+
     // Членство пользователей в комьюнити (таблица community_members).
     public class MemberRepository
     {
@@ -21,12 +32,11 @@ namespace Community_Service.Data
         {
             var storedUserId = UInt64Storage.ToInt64(userId);
             await using var conn = await _db.OpenConnectionAsync();
-            return await conn.QuerySingleAsync<MemberEntity>(
-                @"INSERT INTO community_members (community_id, user_id)
-                  VALUES (@communityId, @userId)
-                  ON CONFLICT (community_id, user_id) DO UPDATE SET user_id = EXCLUDED.user_id
-                  RETURNING *;",
-                new { communityId, userId = storedUserId });
+            await using var tx = await conn.BeginTransactionAsync();
+            var result = await MembershipOrderStore.AddAtTopAsync(
+                conn, tx, communityId, storedUserId);
+            await tx.CommitAsync();
+            return result.Member;
         }
 
         public async Task<bool> RemoveAsync(long communityId, ulong userId)
@@ -34,6 +44,7 @@ namespace Community_Service.Data
             var storedUserId = UInt64Storage.ToInt64(userId);
             await using var conn = await _db.OpenConnectionAsync();
             await using var tx = await conn.BeginTransactionAsync();
+            await MembershipOrderStore.LockUserAsync(conn, tx, storedUserId);
             var member = await conn.QuerySingleOrDefaultAsync<MemberEntity>(
                 @"SELECT * FROM community_members
                   WHERE community_id = @communityId AND user_id = @userId
@@ -46,10 +57,53 @@ namespace Community_Service.Data
                 @"DELETE FROM community_members
                   WHERE community_id = @communityId AND user_id = @userId;",
                 new { communityId, userId = storedUserId }, tx);
+            await MembershipOrderStore.NormalizeAsync(conn, tx, storedUserId);
             await _outbox.EnqueueAsync(conn, tx,
                 CommunityEventFactory.MemberLeft(member, userId));
             await tx.CommitAsync();
             return true;
+        }
+
+        public async Task<SetMemberPositionResult> SetPositionAsync(
+            long communityId,
+            ulong userId,
+            int position)
+        {
+            var storedUserId = UInt64Storage.ToInt64(userId);
+            await using var conn = await _db.OpenConnectionAsync();
+            await using var tx = await conn.BeginTransactionAsync();
+            await MembershipOrderStore.LockUserAsync(conn, tx, storedUserId);
+
+            var memberships = (await conn.QueryAsync<MemberEntity>(
+                @"SELECT * FROM community_members
+                  WHERE user_id = @userId
+                  ORDER BY sort_order, id
+                  FOR UPDATE;",
+                new { userId = storedUserId },
+                tx)).AsList();
+            var currentIndex = memberships.FindIndex(member => member.CommunityId == communityId);
+            if (currentIndex < 0)
+                return new SetMemberPositionResult(SetMemberPositionStatus.NotMember);
+            if (position < 0 || position >= memberships.Count)
+                return new SetMemberPositionResult(SetMemberPositionStatus.OutOfRange);
+
+            var moved = memberships[currentIndex];
+            memberships.RemoveAt(currentIndex);
+            memberships.Insert(position, moved);
+
+            for (var index = 0; index < memberships.Count; index++)
+            {
+                if (memberships[index].SortOrder == index)
+                    continue;
+
+                await conn.ExecuteAsync(
+                    "UPDATE community_members SET sort_order = @position WHERE id = @id;",
+                    new { position = index, memberships[index].Id },
+                    tx);
+            }
+
+            await tx.CommitAsync();
+            return new SetMemberPositionResult(SetMemberPositionStatus.Success, position);
         }
 
         public async Task<bool> ExistsAsync(long communityId, ulong userId)

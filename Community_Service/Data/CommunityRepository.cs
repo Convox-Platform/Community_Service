@@ -41,17 +41,13 @@ namespace Community_Service.Data
 
             var members = new HashSet<ulong>(memberIds) { ownerId };
             var insertedMembers = new List<MemberEntity>(members.Count);
-            foreach (var uid in members)
+            foreach (var uid in members.OrderBy(uid => UInt64Storage.ToInt64(uid)))
             {
                 var storedUserId = UInt64Storage.ToInt64(uid);
-                var member = await conn.QuerySingleOrDefaultAsync<MemberEntity>(
-                    @"INSERT INTO community_members (community_id, user_id)
-                      VALUES (@cid, @uid)
-                      ON CONFLICT DO NOTHING
-                      RETURNING *;",
-                    new { cid = community.Id, uid = storedUserId }, tx);
-                if (member is not null)
-                    insertedMembers.Add(member);
+                var result = await MembershipOrderStore.AddAtTopAsync(
+                    conn, tx, community.Id, storedUserId);
+                if (result.Inserted)
+                    insertedMembers.Add(result.Member);
             }
 
             var categoryId = await conn.QuerySingleAsync<long>(
@@ -65,6 +61,7 @@ namespace Community_Service.Data
                 new { channelId, cid = community.Id, catId = categoryId, name = "общий", type = (short)ChannelType.Text }, tx);
 
             community.MembersCount = members.Count;
+            community.SortOrder = 0;
             await _outbox.EnqueueAsync(conn, tx,
                 CommunityEventFactory.CommunityCreated(community, ownerId));
             foreach (var member in insertedMembers)
@@ -91,11 +88,12 @@ namespace Community_Service.Data
             var storedUserId = UInt64Storage.ToInt64(userId);
             await using var conn = await _db.OpenConnectionAsync();
             var rows = await conn.QueryAsync<CommunityEntity>(
-                @"SELECT c.*, (SELECT COUNT(*) FROM community_members m WHERE m.community_id = c.id) AS members_count
+                @"SELECT c.*, cm.sort_order,
+                         (SELECT COUNT(*) FROM community_members m WHERE m.community_id = c.id) AS members_count
                   FROM communities c
                   JOIN community_members cm ON cm.community_id = c.id
                   WHERE cm.user_id = @userId
-                  ORDER BY c.created_at;",
+                  ORDER BY cm.sort_order, cm.id;",
                 new { userId = storedUserId });
             return rows.AsList();
         }
