@@ -28,6 +28,9 @@ message EventEnvelope {
     MeetingUpdated meeting_updated = 19;
     MeetingDeleted meeting_deleted = 20;
     MemberJoined member_joined = 21;
+    CommunityDeleted community_deleted = 22;
+    CommunityOwnershipTransferred community_ownership_transferred = 23;
+    CommunityUpdated community_updated = 24;
   }
 }
 
@@ -45,6 +48,19 @@ message CommunitySnapshot {
 }
 
 message CommunityCreated { CommunitySnapshot community = 1; }
+message CommunityUpdated {
+  community.v1.Community community = 1;
+  repeated string changed_fields = 2;
+}
+message CommunityDeleted {
+  CommunitySnapshot community = 1;
+  repeated uint64 member_user_ids = 2;
+}
+message CommunityOwnershipTransferred {
+  CommunitySnapshot community = 1;
+  uint64 previous_owner_user_id = 2;
+  uint64 new_owner_user_id = 3;
+}
 message MemberLeft { MemberSnapshot member = 1; }
 message MemberJoined {
   MemberSnapshot member = 1;

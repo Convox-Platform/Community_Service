@@ -155,20 +155,100 @@ namespace Community_Service.Services
         public override async Task<LeaveCommunityResponse> LeaveCommunity(
             LeaveCommunityRequest request, ServerCallContext context)
         {
+            ValidateCommunityId(request.CommunityId);
             var userId = context.GetUserId();
             var communityId = (long)request.CommunityId;
 
-            var ownerId = await _communities.GetOwnerIdAsync(communityId)
-                ?? throw new RpcException(new Status(StatusCode.NotFound, "Community not found"));
+            return await _members.LeaveAsync(communityId, userId) switch
+            {
+                LeaveCommunityStatus.Left => new LeaveCommunityResponse(),
+                LeaveCommunityStatus.CommunityNotFound =>
+                    throw new RpcException(new Status(StatusCode.NotFound, "Community not found")),
+                LeaveCommunityStatus.OwnerCannotLeave =>
+                    throw new RpcException(new Status(StatusCode.FailedPrecondition, "Owner cannot leave the community")),
+                LeaveCommunityStatus.NotMember =>
+                    throw new RpcException(new Status(StatusCode.FailedPrecondition, "Not a member of the community")),
+                _ => throw new InvalidOperationException("Unknown community leave result")
+            };
+        }
 
-            // Владелец не может просто выйти — иначе комьюнити останется без владельца.
-            if (ownerId == userId)
-                throw new RpcException(new Status(StatusCode.FailedPrecondition, "Owner cannot leave the community"));
+        public override async Task<DeleteCommunityResponse> DeleteCommunity(
+            DeleteCommunityRequest request, ServerCallContext context)
+        {
+            ValidateCommunityId(request.CommunityId);
+            var result = await _communities.DeleteAsync(
+                (long)request.CommunityId,
+                context.GetUserId());
 
-            if (!await _members.RemoveAsync(communityId, userId))
-                throw new RpcException(new Status(StatusCode.FailedPrecondition, "Not a member of the community"));
+            return result switch
+            {
+                DeleteCommunityStatus.Deleted => new DeleteCommunityResponse(),
+                DeleteCommunityStatus.NotFound =>
+                    throw new RpcException(new Status(StatusCode.NotFound, "Community not found")),
+                DeleteCommunityStatus.NotOwner =>
+                    throw new RpcException(new Status(StatusCode.PermissionDenied, "Only the owner can delete the community")),
+                _ => throw new InvalidOperationException("Unknown community deletion result")
+            };
+        }
 
-            return new LeaveCommunityResponse();
+        public override async Task<TransferCommunityOwnershipResponse> TransferCommunityOwnership(
+            TransferCommunityOwnershipRequest request, ServerCallContext context)
+        {
+            ValidateCommunityId(request.CommunityId);
+            if (request.NewOwnerUserId == 0)
+                throw new RpcException(new Status(StatusCode.InvalidArgument, "new_owner_user_id is required"));
+
+            var result = await _communities.TransferOwnershipAsync(
+                (long)request.CommunityId,
+                context.GetUserId(),
+                request.NewOwnerUserId);
+
+            return result.Status switch
+            {
+                TransferCommunityOwnershipStatus.Transferred =>
+                    new TransferCommunityOwnershipResponse
+                    {
+                        PreviousOwnerUserId = result.PreviousOwnerUserId,
+                        NewOwnerUserId = result.NewOwnerUserId
+                    },
+                TransferCommunityOwnershipStatus.NotFound =>
+                    throw new RpcException(new Status(StatusCode.NotFound, "Community not found")),
+                TransferCommunityOwnershipStatus.NotOwner =>
+                    throw new RpcException(new Status(StatusCode.PermissionDenied, "Only the owner can transfer the community")),
+                TransferCommunityOwnershipStatus.NewOwnerNotMember =>
+                    throw new RpcException(new Status(StatusCode.FailedPrecondition, "The new owner must be a community member")),
+                TransferCommunityOwnershipStatus.AlreadyOwner =>
+                    throw new RpcException(new Status(StatusCode.FailedPrecondition, "The user is already the community owner")),
+                _ => throw new InvalidOperationException("Unknown community ownership transfer result")
+            };
+        }
+
+        public override async Task<EditCommunityResponse> EditCommunity(
+            EditCommunityRequest request, ServerCallContext context)
+        {
+            ValidateCommunityId(request.CommunityId);
+            if (!request.HasName && !request.HasAvatar)
+                throw new RpcException(new Status(
+                    StatusCode.InvalidArgument, "At least one field to update is required"));
+            if (request.HasName && string.IsNullOrWhiteSpace(request.Name))
+                throw new RpcException(new Status(StatusCode.InvalidArgument, "Name is required"));
+
+            var userId = context.GetUserId();
+            var communityId = (long)request.CommunityId;
+            await _guard.EnsureCommunityAdminAsync(userId, communityId);
+
+            var changedFields = new List<string>();
+            if (request.HasName) changedFields.Add("name");
+            if (request.HasAvatar) changedFields.Add("avatar");
+
+            var updated = await _communities.UpdateAsync(
+                communityId,
+                request.HasName ? request.Name : null,
+                request.HasAvatar,
+                request.HasAvatar ? request.Avatar : null,
+                userId,
+                changedFields);
+            return new EditCommunityResponse { Community = updated.ToProto() };
         }
 
         public override async Task<CreateCommunityResponse> CreateCommunity(
@@ -381,6 +461,12 @@ namespace Community_Service.Services
             state is PresenceGrpc.PresenceState.Online or
                 PresenceGrpc.PresenceState.Idle or
                 PresenceGrpc.PresenceState.DoNotDisturb;
+
+        private static void ValidateCommunityId(ulong communityId)
+        {
+            if (communityId == 0 || communityId > long.MaxValue)
+                throw new RpcException(new Status(StatusCode.InvalidArgument, "community_id is required"));
+        }
 
         private static Metadata ForwardAuthorization(ServerCallContext context)
         {

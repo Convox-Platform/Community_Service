@@ -21,6 +21,9 @@ service CommunityService {
   rpc ListChannels (ListChannelsRequest) returns (ListChannelsResponse); // возвращает список каналов и категорий, к которым они пренадлежат по айди комьюнити
   rpc GetMembers (GetMembersRequest) returns (GetMembersResponse);
   rpc SetCommunityPosition (SetCommunityPositionRequest) returns (SetCommunityPositionResponse);
+  rpc EditCommunity (EditCommunityRequest) returns (EditCommunityResponse);
+  rpc DeleteCommunity (DeleteCommunityRequest) returns (DeleteCommunityResponse);
+  rpc TransferCommunityOwnership (TransferCommunityOwnershipRequest) returns (TransferCommunityOwnershipResponse);
 }
 
 service ChannelService {
@@ -140,6 +143,17 @@ message SetCommunityPositionResponse {
   uint32 position = 1;
 }
 
+message EditCommunityRequest {
+  uint64 community_id = 1;
+  optional string name = 2;
+  // file_service asset id; an empty string removes the avatar
+  optional string avatar = 3;
+}
+
+message EditCommunityResponse {
+  Community community = 1;
+}
+
 message CreateInviteRequest {
   uint64 community_id = 1;
   optional uint32 max_uses = 2;
@@ -186,6 +200,23 @@ message LeaveCommunityRequest {
 }
 
 message LeaveCommunityResponse {
+}
+
+message DeleteCommunityRequest {
+  uint64 community_id = 1;
+}
+
+message DeleteCommunityResponse {
+}
+
+message TransferCommunityOwnershipRequest {
+  uint64 community_id = 1;
+  uint64 new_owner_user_id = 2;
+}
+
+message TransferCommunityOwnershipResponse {
+  uint64 previous_owner_user_id = 1;
+  uint64 new_owner_user_id = 2;
 }
 
 message CreateCommunityRequest {

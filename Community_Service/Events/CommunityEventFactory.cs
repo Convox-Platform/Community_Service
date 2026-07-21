@@ -13,14 +13,50 @@ public static class CommunityEventFactory
         Build(community.Id, actorUserId,
             new CommunityCreated
             {
-                Community = new CommunitySnapshot
-                {
-                    Community = community.ToProto(),
-                    OwnerUserId = UInt64Storage.ToUInt64(community.OwnerId),
-                    CreatedAt = ToTimestamp(community.CreatedAt)
-                }
+                Community = ToSnapshot(community)
             },
             RoutingKeys.Community(community.Id, "created"));
+
+    public static OutboxMessage CommunityUpdated(
+        CommunityEntity community, ulong actorUserId, IEnumerable<string> changedFields)
+    {
+        var payload = new CommunityUpdated { Community = community.ToProto() };
+        payload.ChangedFields.AddRange(changedFields);
+        return Build(community.Id, actorUserId, payload,
+            RoutingKeys.Community(community.Id, "updated"));
+    }
+
+    public static OutboxMessage CommunityDeleted(
+        CommunityEntity community,
+        ulong actorUserId,
+        IReadOnlyCollection<ulong> memberUserIds)
+    {
+        var payload = new CommunityDeleted { Community = ToSnapshot(community) };
+        payload.MemberUserIds.AddRange(memberUserIds);
+        var routingKeys = new List<string>(memberUserIds.Count + 1)
+        {
+            RoutingKeys.Community(community.Id, "deleted")
+        };
+        routingKeys.AddRange(memberUserIds.Select(userId =>
+            RoutingKeys.User(userId, "community.deleted")));
+        return Build(community.Id, actorUserId, payload, routingKeys.ToArray());
+    }
+
+    public static OutboxMessage CommunityOwnershipTransferred(
+        CommunityEntity community,
+        ulong actorUserId,
+        ulong previousOwnerUserId,
+        ulong newOwnerUserId) =>
+        Build(community.Id, actorUserId,
+            new CommunityOwnershipTransferred
+            {
+                Community = ToSnapshot(community),
+                PreviousOwnerUserId = previousOwnerUserId,
+                NewOwnerUserId = newOwnerUserId
+            },
+            RoutingKeys.Community(community.Id, "ownership.transferred"),
+            RoutingKeys.User(previousOwnerUserId, "community.ownership.transferred"),
+            RoutingKeys.User(newOwnerUserId, "community.ownership.transferred"));
 
     public static OutboxMessage MemberLeft(MemberEntity member, ulong actorUserId) =>
         Build(member.CommunityId, actorUserId,
@@ -129,6 +165,9 @@ public static class CommunityEventFactory
         switch (payload)
         {
             case CommunityCreated value: envelope.CommunityCreated = value; break;
+            case CommunityUpdated value: envelope.CommunityUpdated = value; break;
+            case CommunityDeleted value: envelope.CommunityDeleted = value; break;
+            case CommunityOwnershipTransferred value: envelope.CommunityOwnershipTransferred = value; break;
             case MemberLeft value: envelope.MemberLeft = value; break;
             case MemberJoined value: envelope.MemberJoined = value; break;
             case ChannelCreated value: envelope.ChannelCreated = value; break;
@@ -148,4 +187,11 @@ public static class CommunityEventFactory
 
     private static Timestamp ToTimestamp(DateTime value) =>
         Timestamp.FromDateTime(DateTime.SpecifyKind(value, DateTimeKind.Utc));
+
+    private static CommunitySnapshot ToSnapshot(CommunityEntity community) => new()
+    {
+        Community = community.ToProto(),
+        OwnerUserId = UInt64Storage.ToUInt64(community.OwnerId),
+        CreatedAt = ToTimestamp(community.CreatedAt)
+    };
 }

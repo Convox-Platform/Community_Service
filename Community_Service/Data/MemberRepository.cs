@@ -11,6 +11,14 @@ namespace Community_Service.Data
         OutOfRange
     }
 
+    public enum LeaveCommunityStatus
+    {
+        Left,
+        CommunityNotFound,
+        OwnerCannotLeave,
+        NotMember
+    }
+
     public readonly record struct SetMemberPositionResult(
         SetMemberPositionStatus Status,
         int Position = 0);
@@ -62,6 +70,46 @@ namespace Community_Service.Data
                 CommunityEventFactory.MemberLeft(member, userId));
             await tx.CommitAsync();
             return true;
+        }
+
+        public async Task<LeaveCommunityStatus> LeaveAsync(long communityId, ulong userId)
+        {
+            var storedUserId = UInt64Storage.ToInt64(userId);
+            await using var conn = await _db.OpenConnectionAsync();
+            await using var tx = await conn.BeginTransactionAsync();
+
+            var ownerId = await conn.QuerySingleOrDefaultAsync<long?>(
+                @"SELECT owner_id FROM communities
+                  WHERE id = @communityId
+                  FOR SHARE;",
+                new { communityId },
+                tx);
+            if (ownerId is null)
+                return LeaveCommunityStatus.CommunityNotFound;
+            if (ownerId.Value == storedUserId)
+                return LeaveCommunityStatus.OwnerCannotLeave;
+
+            await MembershipOrderStore.LockUserAsync(conn, tx, storedUserId);
+            var member = await conn.QuerySingleOrDefaultAsync<MemberEntity>(
+                @"SELECT * FROM community_members
+                  WHERE community_id = @communityId AND user_id = @userId
+                  FOR UPDATE;",
+                new { communityId, userId = storedUserId },
+                tx);
+            if (member is null)
+                return LeaveCommunityStatus.NotMember;
+
+            await conn.ExecuteAsync(
+                "DELETE FROM community_members WHERE id = @id;",
+                new { member.Id },
+                tx);
+            await MembershipOrderStore.NormalizeAsync(conn, tx, storedUserId);
+            await _outbox.EnqueueAsync(
+                conn,
+                tx,
+                CommunityEventFactory.MemberLeft(member, userId));
+            await tx.CommitAsync();
+            return LeaveCommunityStatus.Left;
         }
 
         public async Task<SetMemberPositionResult> SetPositionAsync(

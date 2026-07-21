@@ -5,6 +5,27 @@ using Npgsql;
 
 namespace Community_Service.Data
 {
+    public enum DeleteCommunityStatus
+    {
+        Deleted,
+        NotFound,
+        NotOwner
+    }
+
+    public enum TransferCommunityOwnershipStatus
+    {
+        Transferred,
+        NotFound,
+        NotOwner,
+        NewOwnerNotMember,
+        AlreadyOwner
+    }
+
+    public readonly record struct TransferCommunityOwnershipResult(
+        TransferCommunityOwnershipStatus Status,
+        ulong PreviousOwnerUserId = 0,
+        ulong NewOwnerUserId = 0);
+
     public class CommunityRepository
     {
         private readonly NpgsqlDataSource _db;
@@ -105,6 +126,162 @@ namespace Community_Service.Data
                 "SELECT owner_id FROM communities WHERE id = @communityId;",
                 new { communityId });
             return ownerId is { } value ? UInt64Storage.ToUInt64(value) : null;
+        }
+
+        public async Task<CommunityEntity> UpdateAsync(
+            long communityId,
+            string? name,
+            bool updateAvatar,
+            string? avatar,
+            ulong actorUserId,
+            IEnumerable<string> changedFields)
+        {
+            await using var conn = await _db.OpenConnectionAsync();
+            await using var tx = await conn.BeginTransactionAsync();
+
+            await conn.QuerySingleAsync<CommunityEntity>(
+                "SELECT * FROM communities WHERE id = @communityId FOR UPDATE;",
+                new { communityId }, tx);
+
+            await conn.ExecuteAsync(
+                @"UPDATE communities
+                  SET name = COALESCE(@name, name),
+                      avatar = CASE
+                          WHEN @updateAvatar THEN NULLIF(@avatar, '')
+                          ELSE avatar
+                      END
+                  WHERE id = @communityId;",
+                new { communityId, name, updateAvatar, avatar }, tx);
+
+            var updated = await conn.QuerySingleAsync<CommunityEntity>(
+                @"SELECT c.*,
+                         (SELECT COUNT(*) FROM community_members m WHERE m.community_id = c.id) AS members_count
+                  FROM communities c
+                  WHERE c.id = @communityId;",
+                new { communityId }, tx);
+            await _outbox.EnqueueAsync(conn, tx,
+                CommunityEventFactory.CommunityUpdated(updated, actorUserId, changedFields));
+            await tx.CommitAsync();
+            return updated;
+        }
+
+        public async Task<DeleteCommunityStatus> DeleteAsync(
+            long communityId,
+            ulong actorUserId)
+        {
+            var storedActorUserId = UInt64Storage.ToInt64(actorUserId);
+            await using var conn = await _db.OpenConnectionAsync();
+            await using var tx = await conn.BeginTransactionAsync();
+
+            var community = await conn.QuerySingleOrDefaultAsync<CommunityEntity>(
+                @"SELECT c.*,
+                         (SELECT COUNT(*) FROM community_members m WHERE m.community_id = c.id) AS members_count
+                  FROM communities c
+                  WHERE c.id = @communityId
+                  FOR UPDATE;",
+                new { communityId },
+                tx);
+            if (community is null)
+                return DeleteCommunityStatus.NotFound;
+            if (community.OwnerId != storedActorUserId)
+                return DeleteCommunityStatus.NotOwner;
+
+            var members = (await conn.QueryAsync<MemberEntity>(
+                @"SELECT * FROM community_members
+                  WHERE community_id = @communityId
+                  ORDER BY user_id
+                  FOR UPDATE;",
+                new { communityId },
+                tx)).AsList();
+
+            foreach (var member in members)
+            {
+                await _outbox.EnqueueAsync(
+                    conn,
+                    tx,
+                    CommunityEventFactory.MemberLeft(member, actorUserId));
+            }
+
+            await _outbox.EnqueueAsync(
+                conn,
+                tx,
+                CommunityEventFactory.CommunityDeleted(
+                    community,
+                    actorUserId,
+                    members.Select(member => UInt64Storage.ToUInt64(member.UserId)).ToArray()));
+
+            await conn.ExecuteAsync(
+                "DELETE FROM communities WHERE id = @communityId;",
+                new { communityId },
+                tx);
+
+            foreach (var storedUserId in members.Select(member => member.UserId).Distinct())
+                await MembershipOrderStore.NormalizeAsync(conn, tx, storedUserId);
+
+            await tx.CommitAsync();
+            return DeleteCommunityStatus.Deleted;
+        }
+
+        public async Task<TransferCommunityOwnershipResult> TransferOwnershipAsync(
+            long communityId,
+            ulong actorUserId,
+            ulong newOwnerUserId)
+        {
+            var storedActorUserId = UInt64Storage.ToInt64(actorUserId);
+            var storedNewOwnerUserId = UInt64Storage.ToInt64(newOwnerUserId);
+            await using var conn = await _db.OpenConnectionAsync();
+            await using var tx = await conn.BeginTransactionAsync();
+
+            var community = await conn.QuerySingleOrDefaultAsync<CommunityEntity>(
+                @"SELECT * FROM communities
+                  WHERE id = @communityId
+                  FOR UPDATE;",
+                new { communityId },
+                tx);
+            if (community is null)
+                return new TransferCommunityOwnershipResult(
+                    TransferCommunityOwnershipStatus.NotFound);
+            if (community.OwnerId != storedActorUserId)
+                return new TransferCommunityOwnershipResult(
+                    TransferCommunityOwnershipStatus.NotOwner);
+            if (community.OwnerId == storedNewOwnerUserId)
+                return new TransferCommunityOwnershipResult(
+                    TransferCommunityOwnershipStatus.AlreadyOwner,
+                    actorUserId,
+                    newOwnerUserId);
+
+            var newOwnerMembershipId = await conn.QuerySingleOrDefaultAsync<long?>(
+                @"SELECT id FROM community_members
+                  WHERE community_id = @communityId AND user_id = @newOwnerUserId
+                  FOR SHARE;",
+                new { communityId, newOwnerUserId = storedNewOwnerUserId },
+                tx);
+            if (newOwnerMembershipId is null)
+                return new TransferCommunityOwnershipResult(
+                    TransferCommunityOwnershipStatus.NewOwnerNotMember);
+
+            await conn.ExecuteAsync(
+                @"UPDATE communities
+                  SET owner_id = @newOwnerUserId
+                  WHERE id = @communityId;",
+                new { communityId, newOwnerUserId = storedNewOwnerUserId },
+                tx);
+
+            community.OwnerId = storedNewOwnerUserId;
+            await _outbox.EnqueueAsync(
+                conn,
+                tx,
+                CommunityEventFactory.CommunityOwnershipTransferred(
+                    community,
+                    actorUserId,
+                    actorUserId,
+                    newOwnerUserId));
+
+            await tx.CommitAsync();
+            return new TransferCommunityOwnershipResult(
+                TransferCommunityOwnershipStatus.Transferred,
+                actorUserId,
+                newOwnerUserId);
         }
 
     }
