@@ -32,11 +32,15 @@ namespace Community_Service.Services
                 throw new RpcException(new Status(StatusCode.InvalidArgument, "Name is required"));
 
             var bitrate = ValidateBitrate(request.Type, request.HasBitrate, request.Bitrate);
+            var activityPublishChannelId = await ResolveActivityPublishChannelAsync(
+                request.Type, request.HasActivityPublishChannelId,
+                request.ActivityPublishChannelId, communityId);
 
             var categoryId = await ResolveCategoryAsync(request.CategoryId, communityId);
 
             var channel = await _channels.CreateAsync(
-                communityId, categoryId, request.Name, (short)request.Type, bitrate, userId);
+                communityId, categoryId, request.Name, (short)request.Type, bitrate,
+                activityPublishChannelId, userId);
 
             return new CreateChannelResponse { Channel = channel.ToProto() };
         }
@@ -49,6 +53,7 @@ namespace Community_Service.Services
             await _guard.EnsureMemberAsync(userId, communityId);
 
             var channel = await LoadChannelAsync((long)request.ChannelId, communityId);
+            await _guard.EnsureCanReadChannelAsync(userId, communityId, channel);
             return new GetChannelInfoResponse { Channel = channel.ToProto() };
         }
 
@@ -63,6 +68,9 @@ namespace Community_Service.Services
             var current = await LoadChannelAsync(channelId, communityId);
             var bitrate = ValidateBitrate(
                 (ChannelType)current.Type, request.HasBitrate, request.Bitrate);
+            var activityPublishChannelId = await ResolveActivityPublishChannelAsync(
+                (ChannelType)current.Type, request.HasActivityPublishChannelId,
+                request.ActivityPublishChannelId, communityId);
 
             // Перемещение выполняется, если задана категория и/или якорь.
             var move = request.HasCategoryId || request.Anchor is not null;
@@ -90,12 +98,15 @@ namespace Community_Service.Services
             if (request.HasCategoryId) changedFields.Add("category_id");
             if (move) changedFields.Add("position");
             if (request.HasBitrate) changedFields.Add("bitrate");
+            if (request.HasActivityPublishChannelId) changedFields.Add("activity_publish_channel_id");
 
             var updated = await _channels.UpdateAsync(
                 channelId,
                 request.HasName ? request.Name : null,
                 request.HasDescription ? request.Description : null,
                 bitrate,
+                request.HasActivityPublishChannelId,
+                activityPublishChannelId,
                 move,
                 targetCategory,
                 anchorId,
@@ -128,6 +139,29 @@ namespace Community_Service.Services
                 throw new RpcException(new Status(
                     StatusCode.InvalidArgument, "Bitrate must be between 1 and 2147483647 bit/s"));
             return (int)bitrate;
+        }
+
+        private async Task<long?> ResolveActivityPublishChannelAsync(
+            ChannelType type,
+            bool hasActivityPublishChannelId,
+            ulong activityPublishChannelId,
+            long communityId)
+        {
+            if (!hasActivityPublishChannelId || activityPublishChannelId == 0)
+                return null;
+
+            if (type != ChannelType.Voice)
+                throw new RpcException(new Status(
+                    StatusCode.InvalidArgument,
+                    "Activity publish channel can only be set for voice channels"));
+
+            var channel = await LoadChannelAsync((long)activityPublishChannelId, communityId);
+            if (channel.Type != (short)ChannelType.Text)
+                throw new RpcException(new Status(
+                    StatusCode.InvalidArgument,
+                    "Activity publish channel must be a text channel"));
+
+            return channel.Id;
         }
 
         private async Task<ChannelEntity> LoadChannelAsync(long channelId, long communityId)

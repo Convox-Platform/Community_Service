@@ -16,10 +16,12 @@ service CommunityService {
   rpc AcceptInvite (AcceptInviteRequest) returns (AcceptInviteResponse);
   rpc ListInviteAttributions (ListInviteAttributionsRequest) returns (ListInviteAttributionsResponse);
   rpc ListCommunities (ListCommunitiesRequest) returns (ListCommunitiesResponse); // возвращает список community
+  rpc PreviewCommunity (PreviewCommunityRequest) returns (PreviewCommunityResponse);
   rpc LeaveCommunity (LeaveCommunityRequest) returns (LeaveCommunityResponse); // покинуть по айди (uint64)
   rpc CreateCommunity (CreateCommunityRequest) returns (CreateCommunityResponse); // создать комьюнити, принимает в себя название, аватарку (flie_service asset id) (nullable), список uint64 айди участников, которые будут добавлены в него, а так же айди шаблона (nullable). Если шаблон не задан - создает дефолтное.
   rpc ListChannels (ListChannelsRequest) returns (ListChannelsResponse); // возвращает список каналов и категорий, к которым они пренадлежат по айди комьюнити
   rpc GetMembers (GetMembersRequest) returns (GetMembersResponse);
+  rpc RemoveCommunityMember (RemoveCommunityMemberRequest) returns (RemoveCommunityMemberResponse);
   rpc SetCommunityPosition (SetCommunityPositionRequest) returns (SetCommunityPositionResponse);
   rpc EditCommunity (EditCommunityRequest) returns (EditCommunityResponse);
   rpc DeleteCommunity (DeleteCommunityRequest) returns (DeleteCommunityResponse);
@@ -44,6 +46,9 @@ service MeetingService {
   rpc EditMeeting (EditMeetingRequest) returns (EditMeetingResponse); // редактировать митинг в комьюнити, принимает в себя айди комьюнити, айди канала, айди митинга. Принимает в себя nullable данные, те что не null - изменить, пустые строки - обнулить (название, описание, дату и время начала). Проверяет есть ли у пользователя доступ к редактированию митингов через permission сервис.
   rpc DeleteMeeting (DeleteMeetingRequest) returns (DeleteMeetingResponse); // удалить митинг в комьюнити, принимает в себя айди комьюнити, айди канала, айди митинга. Проверяет есть ли у пользователя доступ к удалению митингов через permission сервис.
   rpc ListMeetings (ListMeetingsRequest) returns (ListMeetingsResponse); // возвращает список митингов в комьюнити по айди комьюнити.
+  rpc StartMeeting (StartMeetingRequest) returns (StartMeetingResponse);
+  rpc EndMeeting (EndMeetingRequest) returns (EndMeetingResponse);
+  rpc CancelMeeting (CancelMeetingRequest) returns (CancelMeetingResponse);
 }
 
 enum ChannelType {
@@ -59,6 +64,7 @@ message Community {
   string description = 4;
   uint32 members_count = 5;
   uint32 sort_order = 6; // позиция community в персональном списке пользователя; 0 — самая верхняя
+  google.protobuf.Timestamp created_at = 7;
 }
 
 message Category {
@@ -77,6 +83,15 @@ message Channel {
   string description = 6;
   int32 position = 7; // порядок канала внутри категории
   uint32 bitrate = 8; // бит/с; 0 для неголосовых каналов
+  uint64 activity_publish_channel_id = 9; // 0 — не публиковать анонсы и recap встречи
+}
+
+enum MeetingStatus {
+  MEETING_STATUS_UNSPECIFIED = 0;
+  MEETING_STATUS_SCHEDULED = 1;
+  MEETING_STATUS_LIVE = 2;
+  MEETING_STATUS_ENDED = 3;
+  MEETING_STATUS_CANCELLED = 4;
 }
 
 message Meeting {
@@ -86,6 +101,11 @@ message Meeting {
   string name = 4;
   string description = 5;
   google.protobuf.Timestamp start_at = 6;
+  MeetingStatus status = 7;
+  google.protobuf.Timestamp started_at = 8;
+  google.protobuf.Timestamp ended_at = 9;
+  string recording_id = 10;
+  uint64 activity_message_id = 11;
 }
 
 message CommunityMember {
@@ -134,6 +154,18 @@ message ListCommunitiesResponse {
   repeated Community communities = 1;
 }
 
+// Lightweight community information for previews. Membership is not required,
+// but the caller must still be authenticated.
+message PreviewCommunityRequest {
+  uint64 community_id = 1;
+}
+
+message PreviewCommunityResponse {
+  Community community = 1;
+  uint64 online_count = 2;
+  uint64 total_members = 3;
+}
+
 message SetCommunityPositionRequest {
   uint64 community_id = 1;
   uint32 position = 2; // индекс от 0 до количества community пользователя минус один
@@ -148,6 +180,8 @@ message EditCommunityRequest {
   optional string name = 2;
   // file_service asset id; an empty string removes the avatar
   optional string avatar = 3;
+  // an empty string clears the description
+  optional string description = 4;
 }
 
 message EditCommunityResponse {
@@ -265,6 +299,7 @@ message CreateChannelRequest {
   string name = 3;
   ChannelType type = 4;
   optional uint32 bitrate = 5; // только для VOICE; по умолчанию 64000 бит/с
+  optional uint64 activity_publish_channel_id = 6; // только для VOICE; 0 — не публиковать
 }
 
 message CreateChannelResponse {
@@ -289,6 +324,7 @@ message EditChannelRequest {
   optional uint64 category_id = 5; // перемещение в другую категорию (0 — вынести из категории)
   optional Anchor anchor = 6; // позиция внутри категории; не задано — первым
   optional uint32 bitrate = 7; // только для VOICE, в бит/с
+  optional uint64 activity_publish_channel_id = 8; // только для VOICE; 0 — очистить
 }
 
 message EditChannelResponse {
@@ -368,6 +404,41 @@ message DeleteMeetingRequest {
 }
 
 message DeleteMeetingResponse {
+}
+
+message RemoveCommunityMemberRequest {
+  uint64 community_id = 1;
+  uint64 user_id = 2;
+}
+
+message RemoveCommunityMemberResponse {
+}
+
+message StartMeetingRequest {
+  uint64 community_id = 1;
+  uint64 meeting_id = 2;
+}
+
+message StartMeetingResponse {
+  Meeting meeting = 1;
+}
+
+message EndMeetingRequest {
+  uint64 community_id = 1;
+  uint64 meeting_id = 2;
+}
+
+message EndMeetingResponse {
+  Meeting meeting = 1;
+}
+
+message CancelMeetingRequest {
+  uint64 community_id = 1;
+  uint64 meeting_id = 2;
+}
+
+message CancelMeetingResponse {
+  Meeting meeting = 1;
 }
 
 message ListMeetingsRequest {

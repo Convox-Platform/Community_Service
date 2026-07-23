@@ -33,6 +33,10 @@ namespace Community_Service
                 ?? throw new ArgumentNullException("PERMISSION_SERVICE_URL not found");
             var presenceServiceUrl = Environment.GetEnvironmentVariable("PRESENCE_SERVICE_URL")
                 ?? throw new ArgumentNullException("PRESENCE_SERVICE_URL not found");
+            var voiceServiceUrl = Environment.GetEnvironmentVariable("VOICE_SERVICE_URL")
+                ?? throw new ArgumentNullException("VOICE_SERVICE_URL not found");
+            var messageServiceUrl = Environment.GetEnvironmentVariable("MESSAGE_SERVICE_URL")
+                ?? throw new ArgumentNullException("MESSAGE_SERVICE_URL not found");
             var amqpUrl = Environment.GetEnvironmentVariable("AMQP_URL")
                 ?? throw new ArgumentNullException("AMQP_URL not found");
             var workerIdValue = Environment.GetEnvironmentVariable("SNOWFLAKE_WORKER_ID") ?? "0";
@@ -85,7 +89,11 @@ namespace Community_Service
                 ExchangeName = rabbitMqExchange
             });
             builder.Services.AddHostedService<RabbitMqOutboxPublisher>();
+            builder.Services.AddHostedService<RecordingStatusConsumer>();
+            builder.Services.AddHttpContextAccessor();
             builder.Services.AddScoped<IPermissionGuard, PermissionGuard>();
+            builder.Services.AddScoped<IMeetingRecordingClient, MeetingRecordingClient>();
+            builder.Services.AddScoped<IMeetingActivityClient, MeetingActivityClient>();
 
             builder.Services
                 .AddGrpcClient<Permissions.Grpc.PermissionService.PermissionServiceClient>(o =>
@@ -93,6 +101,12 @@ namespace Community_Service
             builder.Services
                 .AddGrpcClient<Presence.Grpc.PresenceService.PresenceServiceClient>(o =>
                     o.Address = new Uri(presenceServiceUrl));
+            builder.Services
+                .AddGrpcClient<Voice.Grpc.MeetingRecordingService.MeetingRecordingServiceClient>(o =>
+                    o.Address = new Uri(voiceServiceUrl));
+            builder.Services
+                .AddGrpcClient<Messages.Grpc.MessageService.MessageServiceClient>(o =>
+                    o.Address = new Uri(messageServiceUrl));
 
             builder.Services.AddCors(options =>
             {

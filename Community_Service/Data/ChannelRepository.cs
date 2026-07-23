@@ -25,15 +25,17 @@ namespace Community_Service.Data
 
         public async Task<ChannelEntity> CreateAsync(
             long communityId, long? categoryId, string name, short type, int? bitrate,
+            long? activityPublishChannelId,
             ulong actorUserId)
         {
             var channelId = _ids.NextId();
             await using var conn = await _db.OpenConnectionAsync();
             await using var tx = await conn.BeginTransactionAsync();
             var channel = await conn.QuerySingleAsync<ChannelEntity>(
-                @"INSERT INTO channels (id, community_id, category_id, name, type, bitrate, position)
+                @"INSERT INTO channels (id, community_id, category_id, name, type, bitrate, activity_publish_channel_id, position)
                   VALUES (@channelId, @communityId, @categoryId, @name, @type,
                           CASE WHEN @type = 2 THEN COALESCE(@bitrate, @defaultVoiceBitrate) ELSE NULL END,
+                          CASE WHEN @type = 2 THEN @activityPublishChannelId ELSE NULL END,
                           COALESCE((SELECT MAX(position) + 1 FROM channels
                                     WHERE community_id = @communityId
                                       AND category_id IS NOT DISTINCT FROM @categoryId), 0))
@@ -46,6 +48,7 @@ namespace Community_Service.Data
                     name,
                     type,
                     bitrate,
+                    activityPublishChannelId,
                     defaultVoiceBitrate = DefaultVoiceBitrate
                 }, tx);
             await _outbox.EnqueueAsync(conn, tx,
@@ -76,6 +79,8 @@ namespace Community_Service.Data
             string? name,
             string? description,
             int? bitrate,
+            bool updateActivityPublishChannelId,
+            long? activityPublishChannelId,
             bool move,
             long? targetCategoryId,
             long? anchorChannelId,
@@ -93,9 +98,13 @@ namespace Community_Service.Data
                 @"UPDATE channels
                   SET name = COALESCE(@name, name),
                       description = COALESCE(@description, description),
-                      bitrate = COALESCE(@bitrate, bitrate)
+                      bitrate = COALESCE(@bitrate, bitrate),
+                      activity_publish_channel_id = CASE
+                          WHEN @updateActivityPublishChannelId THEN @activityPublishChannelId
+                          ELSE activity_publish_channel_id
+                      END
                   WHERE id = @channelId;",
-                new { channelId, name, description, bitrate }, tx);
+                new { channelId, name, description, bitrate, updateActivityPublishChannelId, activityPublishChannelId }, tx);
 
             if (move)
             {

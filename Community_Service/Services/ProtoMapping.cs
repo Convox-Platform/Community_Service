@@ -14,7 +14,8 @@ namespace Community_Service.Services
             Avatar = e.Avatar ?? string.Empty,
             Description = e.Description,
             MembersCount = (uint)e.MembersCount,
-            SortOrder = (uint)e.SortOrder
+            SortOrder = (uint)e.SortOrder,
+            CreatedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(e.CreatedAt, DateTimeKind.Utc))
         };
 
         public static Category ToProto(this CategoryEntity e) => new()
@@ -34,18 +35,30 @@ namespace Community_Service.Services
             Type = (ChannelType)e.Type,
             Description = e.Description,
             Position = e.Position,
-            Bitrate = (uint)(e.Bitrate ?? 0)
+            Bitrate = (uint)(e.Bitrate ?? 0),
+            ActivityPublishChannelId = (ulong)(e.ActivityPublishChannelId ?? 0)
         };
 
-        public static Meeting ToProto(this MeetingEntity e) => new()
+        public static Meeting ToProto(this MeetingEntity e)
         {
-            Id = (ulong)e.Id,
-            CommunityId = (ulong)e.CommunityId,
-            ChannelId = (ulong)e.ChannelId,
-            Name = e.Name,
-            Description = e.Description,
-            StartAt = Timestamp.FromDateTime(DateTime.SpecifyKind(e.StartAt, DateTimeKind.Utc))
-        };
+            var meeting = new Meeting
+            {
+                Id = (ulong)e.Id,
+                CommunityId = (ulong)e.CommunityId,
+                ChannelId = (ulong)e.ChannelId,
+                Name = e.Name,
+                Description = e.Description,
+                StartAt = Timestamp.FromDateTime(DateTime.SpecifyKind(e.StartAt, DateTimeKind.Utc)),
+                Status = (MeetingStatus)e.Status,
+                RecordingId = e.RecordingId ?? string.Empty,
+                ActivityMessageId = (ulong)(e.ActivityMessageId ?? 0)
+            };
+            if (e.StartedAt is { } startedAt)
+                meeting.StartedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(startedAt, DateTimeKind.Utc));
+            if (e.EndedAt is { } endedAt)
+                meeting.EndedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(endedAt, DateTimeKind.Utc));
+            return meeting;
+        }
 
         public static CommunityInvite ToProto(this InviteEntity e)
         {

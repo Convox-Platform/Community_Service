@@ -43,6 +43,7 @@ namespace Community_Service.Data
         public string Description { get; set; } = "";
         public int Position { get; set; }
         public int? Bitrate { get; set; }
+        public long? ActivityPublishChannelId { get; set; }
     }
 
     public class MeetingEntity
@@ -53,6 +54,11 @@ namespace Community_Service.Data
         public string Name { get; set; } = "";
         public string Description { get; set; } = "";
         public DateTime StartAt { get; set; }
+        public short Status { get; set; }
+        public DateTime? StartedAt { get; set; }
+        public DateTime? EndedAt { get; set; }
+        public string? RecordingId { get; set; }
+        public long? ActivityMessageId { get; set; }
     }
 
     public class InviteEntity

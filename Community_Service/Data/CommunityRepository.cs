@@ -74,12 +74,12 @@ namespace Community_Service.Data
             var categoryId = await conn.QuerySingleAsync<long>(
                 @"INSERT INTO categories (community_id, name, position)
                   VALUES (@cid, @name, 0) RETURNING id;",
-                new { cid = community.Id, name = "Общее" }, tx);
+                new { cid = community.Id, name = "General" }, tx);
 
             await conn.ExecuteAsync(
                 @"INSERT INTO channels (id, community_id, category_id, name, type, position)
                   VALUES (@channelId, @cid, @catId, @name, @type, 0);",
-                new { channelId, cid = community.Id, catId = categoryId, name = "общий", type = (short)ChannelType.Text }, tx);
+                new { channelId, cid = community.Id, catId = categoryId, name = "general", type = (short)ChannelType.Text }, tx);
 
             community.MembersCount = members.Count;
             community.SortOrder = 0;
@@ -133,6 +133,7 @@ namespace Community_Service.Data
             string? name,
             bool updateAvatar,
             string? avatar,
+            string? description,
             ulong actorUserId,
             IEnumerable<string> changedFields)
         {
@@ -149,9 +150,10 @@ namespace Community_Service.Data
                       avatar = CASE
                           WHEN @updateAvatar THEN NULLIF(@avatar, '')
                           ELSE avatar
-                      END
+                      END,
+                      description = COALESCE(@description, description)
                   WHERE id = @communityId;",
-                new { communityId, name, updateAvatar, avatar }, tx);
+                new { communityId, name, updateAvatar, avatar, description }, tx);
 
             var updated = await conn.QuerySingleAsync<CommunityEntity>(
                 @"SELECT c.*,

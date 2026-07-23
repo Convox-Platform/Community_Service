@@ -13,6 +13,8 @@
     <Protobuf Include="Protos\community_events.proto" GrpcServices="None" />
     <Protobuf Include="Protos\permission.proto" GrpcServices="Client" />
     <Protobuf Include="Protos\presence.proto" GrpcServices="Client" />
+    <Protobuf Include="Protos\voice_meeting.proto" GrpcServices="Client" />
+    <Protobuf Include="Protos\system_message.proto" GrpcServices="Client" />
   </ItemGroup>
 
   <ItemGroup>

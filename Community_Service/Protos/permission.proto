@@ -161,6 +161,14 @@ message AdminHasChannelAccessRequest {
   // Ключ проверяемого пермишена; пустая строка = channel.read.
   string permission = 3;
   uint64 server_id = 4;
+  // Контекст канала для иерархического вычисления доступа. Если заполнен,
+  // channel_id выше игнорируется. category_id = 0 означает канал без категории.
+  repeated ChannelAccessContext channel_contexts = 5;
+}
+
+message ChannelAccessContext {
+  uint64 channel_id = 1;
+  uint64 category_id = 2;
 }
 
 message Access {

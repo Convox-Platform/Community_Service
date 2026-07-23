@@ -10,15 +10,21 @@ namespace Community_Service.Services
         private readonly MeetingRepository _meetings;
         private readonly ChannelRepository _channels;
         private readonly IPermissionGuard _guard;
+        private readonly IMeetingRecordingClient _recordings;
+        private readonly IMeetingActivityClient _activity;
 
         public MeetingGrpcService(
             MeetingRepository meetings,
             ChannelRepository channels,
-            IPermissionGuard guard)
+            IPermissionGuard guard,
+            IMeetingRecordingClient recordings,
+            IMeetingActivityClient activity)
         {
             _meetings = meetings;
             _channels = channels;
             _guard = guard;
+            _recordings = recordings;
+            _activity = activity;
         }
 
         public override async Task<CreateMeetingResponse> CreateMeeting(
@@ -33,11 +39,12 @@ namespace Community_Service.Services
             if (request.StartAt is null)
                 throw new RpcException(new Status(StatusCode.InvalidArgument, "start_at is required"));
 
-            await EnsureChannelAsync((long)request.ChannelId, communityId);
+            var channel = await EnsureVoiceChannelAsync((long)request.ChannelId, communityId);
 
             var meeting = await _meetings.CreateAsync(
                 communityId, (long)request.ChannelId, request.Name, request.Description,
                 request.StartAt.ToDateTime(), userId);
+            await PublishActivityAsync(meeting, channel, "scheduled");
 
             return new CreateMeetingResponse { Meeting = meeting.ToProto() };
         }
@@ -79,6 +86,86 @@ namespace Community_Service.Services
             return new DeleteMeetingResponse();
         }
 
+        public override async Task<StartMeetingResponse> StartMeeting(
+            StartMeetingRequest request, ServerCallContext context)
+        {
+            var userId = context.GetUserId();
+            var communityId = (long)request.CommunityId;
+            await _guard.EnsureCanManageMeetingsAsync(userId, communityId);
+
+            var meeting = await LoadMeetingAsync((long)request.MeetingId, communityId);
+            if (meeting.Status != MeetingRepository.Scheduled)
+                throw new RpcException(new Status(StatusCode.FailedPrecondition, "Meeting is not scheduled"));
+
+            string recordingId;
+            try
+            {
+                recordingId = await _recordings.StartAsync(
+                    meeting.Id, meeting.CommunityId, meeting.ChannelId, userId);
+            }
+            catch (RpcException)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                throw new RpcException(new Status(StatusCode.Unavailable,
+                    $"Unable to start meeting recording: {exception.Message}"));
+            }
+
+            var started = await _meetings.StartAsync(meeting.Id, recordingId, userId);
+            await PublishActivityAsync(started, await EnsureVoiceChannelAsync(started.ChannelId, communityId), "live");
+            return new StartMeetingResponse { Meeting = started.ToProto() };
+        }
+
+        public override async Task<EndMeetingResponse> EndMeeting(
+            EndMeetingRequest request, ServerCallContext context)
+        {
+            var userId = context.GetUserId();
+            var communityId = (long)request.CommunityId;
+            await _guard.EnsureCanManageMeetingsAsync(userId, communityId);
+
+            var meeting = await LoadMeetingAsync((long)request.MeetingId, communityId);
+            if (meeting.Status == MeetingRepository.Ended)
+                return new EndMeetingResponse { Meeting = meeting.ToProto() };
+            if (meeting.Status != MeetingRepository.Live || string.IsNullOrWhiteSpace(meeting.RecordingId))
+                throw new RpcException(new Status(StatusCode.FailedPrecondition, "Meeting is not live"));
+
+            try
+            {
+                await _recordings.StopAsync(meeting.CommunityId, meeting.ChannelId, meeting.RecordingId);
+            }
+            catch (RpcException)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                throw new RpcException(new Status(StatusCode.Unavailable,
+                    $"Unable to stop meeting recording: {exception.Message}"));
+            }
+
+            var ended = await _meetings.EndAsync(meeting.Id, userId);
+            await PublishActivityAsync(ended, await EnsureVoiceChannelAsync(ended.ChannelId, communityId), "processing");
+            return new EndMeetingResponse { Meeting = ended.ToProto() };
+        }
+
+        public override async Task<CancelMeetingResponse> CancelMeeting(
+            CancelMeetingRequest request, ServerCallContext context)
+        {
+            var userId = context.GetUserId();
+            var communityId = (long)request.CommunityId;
+            await _guard.EnsureCanManageMeetingsAsync(userId, communityId);
+
+            var meeting = await LoadMeetingAsync((long)request.MeetingId, communityId);
+            if (meeting.Status != MeetingRepository.Scheduled)
+                throw new RpcException(new Status(StatusCode.FailedPrecondition,
+                    "Only scheduled meetings can be cancelled"));
+            var cancelled = await _meetings.CancelAsync(meeting.Id, userId);
+            await PublishActivityAsync(cancelled, await EnsureVoiceChannelAsync(cancelled.ChannelId, communityId), "cancelled");
+            return new CancelMeetingResponse { Meeting = cancelled.ToProto() };
+        }
+
         public override async Task<ListMeetingsResponse> ListMeetings(
             ListMeetingsRequest request, ServerCallContext context)
         {
@@ -93,11 +180,24 @@ namespace Community_Service.Services
             return response;
         }
 
-        private async Task EnsureChannelAsync(long channelId, long communityId)
+        private async Task<ChannelEntity> EnsureVoiceChannelAsync(long channelId, long communityId)
         {
             var channel = await _channels.GetByIdAsync(channelId);
             if (channel is null || channel.CommunityId != communityId)
                 throw new RpcException(new Status(StatusCode.NotFound, "Channel not found"));
+            if (channel.Type != (short)ChannelType.Voice)
+                throw new RpcException(new Status(StatusCode.InvalidArgument,
+                    "Meetings can only be created in voice channels"));
+            return channel;
+        }
+
+        private async Task PublishActivityAsync(MeetingEntity meeting, ChannelEntity voiceChannel, string phase)
+        {
+            var messageId = await _activity.UpsertAsync(meeting, voiceChannel, phase);
+            if (messageId is not { } id)
+                return;
+            meeting.ActivityMessageId = id;
+            await _meetings.SetActivityMessageIdAsync(meeting.Id, id);
         }
 
         private async Task<MeetingEntity> LoadMeetingAsync(long meetingId, long communityId)

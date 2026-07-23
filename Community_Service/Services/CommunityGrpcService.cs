@@ -50,6 +50,36 @@ namespace Community_Service.Services
             return response;
         }
 
+        public override async Task<PreviewCommunityResponse> PreviewCommunity(
+            PreviewCommunityRequest request, ServerCallContext context)
+        {
+            if (request.CommunityId == 0 || request.CommunityId > long.MaxValue)
+                throw new RpcException(new Status(StatusCode.InvalidArgument, "community_id is required"));
+
+            var communityId = (long)request.CommunityId;
+            var community = await _communities.GetByIdAsync(communityId)
+                ?? throw new RpcException(new Status(StatusCode.NotFound, "Community not found"));
+            var authorization = ForwardAuthorization(context);
+            var totalMembersTask = _members.CountByCommunityAsync(communityId);
+            var summaryTask = _presence.GetCommunityPresenceSummaryAsync(
+                new PresenceGrpc.GetCommunityPresenceSummaryRequest
+                {
+                    CommunityId = request.CommunityId
+                },
+                authorization,
+                cancellationToken: context.CancellationToken).ResponseAsync;
+
+            await Task.WhenAll(totalMembersTask, summaryTask);
+            var totalMembers = (ulong)await totalMembersTask;
+            var onlineCount = (await summaryTask).Summary?.OnlineCount ?? 0;
+            return new PreviewCommunityResponse
+            {
+                Community = community.ToProto(),
+                OnlineCount = Math.Min(onlineCount, totalMembers),
+                TotalMembers = totalMembers
+            };
+        }
+
         public override async Task<SetCommunityPositionResponse> SetCommunityPosition(
             SetCommunityPositionRequest request, ServerCallContext context)
         {
@@ -227,7 +257,7 @@ namespace Community_Service.Services
             EditCommunityRequest request, ServerCallContext context)
         {
             ValidateCommunityId(request.CommunityId);
-            if (!request.HasName && !request.HasAvatar)
+            if (!request.HasName && !request.HasAvatar && !request.HasDescription)
                 throw new RpcException(new Status(
                     StatusCode.InvalidArgument, "At least one field to update is required"));
             if (request.HasName && string.IsNullOrWhiteSpace(request.Name))
@@ -240,12 +270,14 @@ namespace Community_Service.Services
             var changedFields = new List<string>();
             if (request.HasName) changedFields.Add("name");
             if (request.HasAvatar) changedFields.Add("avatar");
+            if (request.HasDescription) changedFields.Add("description");
 
             var updated = await _communities.UpdateAsync(
                 communityId,
                 request.HasName ? request.Name : null,
                 request.HasAvatar,
                 request.HasAvatar ? request.Avatar : null,
+                request.HasDescription ? request.Description : null,
                 userId,
                 changedFields);
             return new EditCommunityResponse { Community = updated.ToProto() };
@@ -357,6 +389,30 @@ namespace Community_Service.Services
                 authorization,
                 context.CancellationToken);
             return response;
+        }
+
+        public override async Task<RemoveCommunityMemberResponse> RemoveCommunityMember(
+            RemoveCommunityMemberRequest request, ServerCallContext context)
+        {
+            if (request.CommunityId == 0 || request.CommunityId > long.MaxValue)
+                throw new RpcException(new Status(StatusCode.InvalidArgument, "community_id is required"));
+            if (request.UserId == 0)
+                throw new RpcException(new Status(StatusCode.InvalidArgument, "user_id is required"));
+
+            var communityId = (long)request.CommunityId;
+            var actorUserId = context.GetUserId();
+            await _guard.EnsureCommunityAdminAsync(actorUserId, communityId);
+
+            var ownerId = await _communities.GetOwnerIdAsync(communityId)
+                ?? throw new RpcException(new Status(StatusCode.NotFound, "Community not found"));
+            if (request.UserId == ownerId)
+                throw new RpcException(new Status(StatusCode.FailedPrecondition, "The community owner cannot be removed"));
+            if (request.UserId == actorUserId)
+                throw new RpcException(new Status(StatusCode.FailedPrecondition, "Use LeaveCommunity to remove yourself"));
+            if (!await _members.RemoveAsync(communityId, request.UserId))
+                throw new RpcException(new Status(StatusCode.NotFound, "Community member not found"));
+
+            return new RemoveCommunityMemberResponse();
         }
 
         private async Task<Dictionary<ulong, PresenceGrpc.PresenceSnapshot>> ListAllCommunityOnlineAsync(
@@ -487,12 +543,27 @@ namespace Community_Service.Services
 
             await _guard.EnsureMemberAsync(userId, communityId);
 
-            var categories = await _categories.ListByCommunityAsync(communityId);
-            var channels = await _channels.ListByCommunityAsync(communityId);
+            var categoriesTask = _categories.ListByCommunityAsync(communityId);
+            var channelsTask = _channels.ListByCommunityAsync(communityId);
+            await Task.WhenAll(categoriesTask, channelsTask);
+
+            var categories = await categoriesTask;
+            var channels = await channelsTask;
+            var access = await _guard.ResolveChannelLayoutAccessAsync(
+                userId, communityId, categories, channels);
+            var visibleChannels = channels
+                .Where(channel => access.ReadableChannelIds.Contains(channel.Id))
+                .ToArray();
+            var visibleCategoryIds = access.ReadableCategoryIds.ToHashSet();
+            visibleCategoryIds.UnionWith(visibleChannels
+                .Where(channel => channel.CategoryId.HasValue)
+                .Select(channel => channel.CategoryId!.Value));
 
             var response = new ListChannelsResponse();
-            response.Categories.AddRange(categories.Select(c => c.ToProto()));
-            response.Channels.AddRange(channels.Select(c => c.ToProto()));
+            response.Categories.AddRange(categories
+                .Where(category => visibleCategoryIds.Contains(category.Id))
+                .Select(category => category.ToProto()));
+            response.Channels.AddRange(visibleChannels.Select(channel => channel.ToProto()));
             return response;
         }
     }

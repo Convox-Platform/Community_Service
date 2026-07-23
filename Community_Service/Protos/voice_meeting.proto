@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+option csharp_namespace = "Community_Service.Voice.Grpc";
+
+package voiceservice.meeting;
+
+service MeetingRecordingService {
+  rpc StartMeetingRecording (StartMeetingRecordingRequest) returns (StartMeetingRecordingResponse);
+  rpc StopMeetingRecording (StopMeetingRecordingRequest) returns (StopMeetingRecordingResponse);
+}
+
+message StartMeetingRecordingRequest {
+  uint64 community_id = 1;
+  uint64 channel_id = 2;
+  uint64 started_by = 3;
+  string idempotency_key = 4;
+}
+
+message StartMeetingRecordingResponse {
+  string recording_id = 1;
+}
+
+message StopMeetingRecordingRequest {
+  uint64 community_id = 1;
+  uint64 channel_id = 2;
+  string recording_id = 3;
+}
+
+message StopMeetingRecordingResponse {
+  bool success = 1;
+}
