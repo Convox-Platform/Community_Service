@@ -36,7 +36,8 @@ namespace Community_Service.Services
             Description = e.Description,
             Position = e.Position,
             Bitrate = (uint)(e.Bitrate ?? 0),
-            ActivityPublishChannelId = (ulong)(e.ActivityPublishChannelId ?? 0)
+            ActivityPublishChannelId = (ulong)(e.ActivityPublishChannelId ?? 0),
+            CreatedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(e.CreatedAt, DateTimeKind.Utc))
         };
 
         public static Meeting ToProto(this MeetingEntity e)

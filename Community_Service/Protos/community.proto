@@ -84,6 +84,7 @@ message Channel {
   int32 position = 7; // порядок канала внутри категории
   uint32 bitrate = 8; // бит/с; 0 для неголосовых каналов
   uint64 activity_publish_channel_id = 9; // 0 — не публиковать анонсы и recap встречи
+  google.protobuf.Timestamp created_at = 10;
 }
 
 enum MeetingStatus {

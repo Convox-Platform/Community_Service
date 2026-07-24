@@ -141,6 +141,8 @@ service PermissionService {
   rpc AdminHasChannelAccess(AdminHasChannelAccessRequest) returns (AdminHasChannelAccessResponse);
   rpc AdminHasCategoryAccess(AdminHasCategoryAccessRequest) returns (AdminHasCategoryAccessResponse);
   rpc AdminListUserPermissions(AdminListUserPermissionsRequest) returns (AdminListUserPermissionsResponse);
+  rpc AdminGetChannelPrivacy(AdminGetChannelPrivacyRequest) returns (AdminGetChannelPrivacyResponse);
+  rpc AdminSetChannelPrivacy(AdminSetChannelPrivacyRequest) returns (AdminSetChannelPrivacyResponse);
 }
 
 message Permission {
@@ -210,4 +212,32 @@ message AdminListUserPermissionsResponse {
   repeated PermissionState permissions = 1;
   // Срезы по запрошенным каналам.
   repeated ChannelPermissions channels = 2;
+}
+
+message ChannelPrivacy {
+  uint64 channel_id = 1;
+  bool is_private = 2;
+  repeated uint64 role_ids = 3;
+  repeated uint64 user_ids = 4;
+}
+
+message AdminGetChannelPrivacyRequest {
+  uint64 server_id = 1;
+  uint64 channel_id = 2;
+}
+
+message AdminGetChannelPrivacyResponse {
+  ChannelPrivacy privacy = 1;
+}
+
+message AdminSetChannelPrivacyRequest {
+  uint64 server_id = 1;
+  uint64 channel_id = 2;
+  bool is_private = 3;
+  repeated uint64 role_ids = 4;
+  repeated uint64 user_ids = 5;
+}
+
+message AdminSetChannelPrivacyResponse {
+  ChannelPrivacy privacy = 1;
 }

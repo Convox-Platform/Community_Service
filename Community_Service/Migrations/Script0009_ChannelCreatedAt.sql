@@ -1,0 +1,2 @@
+ALTER TABLE channels
+    ADD COLUMN created_at TIMESTAMPTZ NOT NULL DEFAULT now();

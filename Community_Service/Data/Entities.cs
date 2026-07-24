@@ -44,6 +44,7 @@ namespace Community_Service.Data
         public int Position { get; set; }
         public int? Bitrate { get; set; }
         public long? ActivityPublishChannelId { get; set; }
+        public DateTime CreatedAt { get; set; }
     }
 
     public class MeetingEntity
