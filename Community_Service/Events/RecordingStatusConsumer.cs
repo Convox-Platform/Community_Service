@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Community_Service.Data;
 using Community_Service.Services;
+using Grpc.Core;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
@@ -10,6 +11,14 @@ public sealed class RecordingStatusConsumer : BackgroundService, IAsyncDisposabl
 {
     private const string Exchange = "recording.events";
     private const string Queue = "community-service.recording-status";
+
+    // recording-service шлёт camelCase (recordingId), а System.Text.Json по умолчанию
+    // сопоставляет имена с учётом регистра — без этого ни одно событие не разбиралось.
+    private static readonly JsonSerializerOptions PayloadOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
     private readonly IServiceProvider _services;
     private readonly RabbitMqOptions _options;
     private readonly ILogger<RecordingStatusConsumer> _logger;
@@ -33,15 +42,17 @@ public sealed class RecordingStatusConsumer : BackgroundService, IAsyncDisposabl
             autoDelete: false, arguments: null, cancellationToken: stoppingToken);
         await _channel.QueueDeclareAsync(Queue, durable: true, exclusive: false, autoDelete: false,
             arguments: null, cancellationToken: stoppingToken);
-        await _channel.QueueBindAsync(Queue, Exchange, "recording.ready", cancellationToken: stoppingToken);
-        await _channel.QueueBindAsync(Queue, Exchange, "recording.failed", cancellationToken: stoppingToken);
+        // Ключи в формате websocket-gateway: recording.community.<serverId>.<status>.
+        // Тот же exchange слушает и gateway, но по своему биндингу на подписки клиента.
+        await _channel.QueueBindAsync(Queue, Exchange, "recording.community.*.ready", cancellationToken: stoppingToken);
+        await _channel.QueueBindAsync(Queue, Exchange, "recording.community.*.failed", cancellationToken: stoppingToken);
 
         var consumer = new AsyncEventingBasicConsumer(_channel);
         consumer.ReceivedAsync += async (_, delivery) =>
         {
             try
             {
-                var status = JsonSerializer.Deserialize<RecordingStatus>(delivery.Body.Span);
+                var status = JsonSerializer.Deserialize<RecordingStatus>(delivery.Body.Span, PayloadOptions);
                 if (status is null || string.IsNullOrWhiteSpace(status.RecordingId))
                     throw new InvalidOperationException("Recording status is missing recordingId");
                 await HandleAsync(status, stoppingToken);
@@ -49,8 +60,18 @@ public sealed class RecordingStatusConsumer : BackgroundService, IAsyncDisposabl
             }
             catch (Exception exception)
             {
-                _logger.LogError(exception, "Failed to process recording status event");
-                await _channel.BasicNackAsync(delivery.DeliveryTag, multiple: false, requeue: true, stoppingToken);
+                // Повторная доставка помогает только при временном сбое. Отказ, который сам
+                // не исправится (битый payload, нереализованный RPC), иначе крутится в
+                // бесконечном requeue-цикле и забивает брокер.
+                var permanent = exception is JsonException or InvalidOperationException
+                    || (exception is RpcException rpc && rpc.StatusCode is StatusCode.Unimplemented
+                        or StatusCode.InvalidArgument
+                        or StatusCode.PermissionDenied
+                        or StatusCode.NotFound);
+                _logger.LogError(exception,
+                    "Failed to process recording status event (permanent: {Permanent})", permanent);
+                await _channel.BasicNackAsync(delivery.DeliveryTag, multiple: false,
+                    requeue: !permanent, stoppingToken);
             }
         };
         await _channel.BasicConsumeAsync(Queue, autoAck: false, consumer, stoppingToken);

@@ -5,7 +5,7 @@ namespace Community_Service.Services;
 
 public interface IMeetingRecordingClient
 {
-    Task<string> StartAsync(long meetingId, long communityId, long channelId, ulong actorUserId);
+    Task<string> StartAsync(long meetingId, long communityId, long channelId, ulong actorUserId, string title);
     Task StopAsync(long communityId, long channelId, string recordingId);
 }
 
@@ -23,7 +23,7 @@ public sealed class MeetingRecordingClient : IMeetingRecordingClient
             ?? throw new InvalidOperationException("MEETING_SERVICE_TOKEN not found");
     }
 
-    public async Task<string> StartAsync(long meetingId, long communityId, long channelId, ulong actorUserId)
+    public async Task<string> StartAsync(long meetingId, long communityId, long channelId, ulong actorUserId, string title)
     {
         var response = await _client.StartMeetingRecordingAsync(
             new StartMeetingRecordingRequest
@@ -31,7 +31,9 @@ public sealed class MeetingRecordingClient : IMeetingRecordingClient
                 CommunityId = (ulong)communityId,
                 ChannelId = (ulong)channelId,
                 StartedBy = actorUserId,
-                IdempotencyKey = $"meeting:{meetingId}"
+                IdempotencyKey = $"meeting:{meetingId}",
+                MeetingId = (ulong)meetingId,
+                Title = title ?? string.Empty
             }, Headers());
         if (string.IsNullOrWhiteSpace(response.RecordingId))
             throw new RpcException(new Status(StatusCode.Unavailable, "Voice service returned an empty recording ID"));

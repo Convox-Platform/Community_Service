@@ -14,6 +14,10 @@ message StartMeetingRecordingRequest {
   uint64 channel_id = 2;
   uint64 started_by = 3;
   string idempotency_key = 4;
+  // Проставляются в записи, чтобы её можно было отличить от посиделок в канале
+  // и показать под именем митинга.
+  uint64 meeting_id = 5;
+  string title = 6;
 }
 
 message StartMeetingRecordingResponse {

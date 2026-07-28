@@ -12,19 +12,22 @@ namespace Community_Service.Services
         private readonly IPermissionGuard _guard;
         private readonly IMeetingRecordingClient _recordings;
         private readonly IMeetingActivityClient _activity;
+        private readonly ILogger<MeetingGrpcService> _logger;
 
         public MeetingGrpcService(
             MeetingRepository meetings,
             ChannelRepository channels,
             IPermissionGuard guard,
             IMeetingRecordingClient recordings,
-            IMeetingActivityClient activity)
+            IMeetingActivityClient activity,
+            ILogger<MeetingGrpcService> logger)
         {
             _meetings = meetings;
             _channels = channels;
             _guard = guard;
             _recordings = recordings;
             _activity = activity;
+            _logger = logger;
         }
 
         public override async Task<CreateMeetingResponse> CreateMeeting(
@@ -101,7 +104,7 @@ namespace Community_Service.Services
             try
             {
                 recordingId = await _recordings.StartAsync(
-                    meeting.Id, meeting.CommunityId, meeting.ChannelId, userId);
+                    meeting.Id, meeting.CommunityId, meeting.ChannelId, userId, meeting.Name);
             }
             catch (RpcException)
             {
@@ -191,13 +194,24 @@ namespace Community_Service.Services
             return channel;
         }
 
+        // Карточка активности — уведомление, а не часть транзакции митинга: состояние
+        // уже сохранено, и падение message-service не должно отменять сам переход.
         private async Task PublishActivityAsync(MeetingEntity meeting, ChannelEntity voiceChannel, string phase)
         {
-            var messageId = await _activity.UpsertAsync(meeting, voiceChannel, phase);
-            if (messageId is not { } id)
-                return;
-            meeting.ActivityMessageId = id;
-            await _meetings.SetActivityMessageIdAsync(meeting.Id, id);
+            try
+            {
+                var messageId = await _activity.UpsertAsync(meeting, voiceChannel, phase);
+                if (messageId is not { } id)
+                    return;
+                meeting.ActivityMessageId = id;
+                await _meetings.SetActivityMessageIdAsync(meeting.Id, id);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(exception,
+                    "Failed to publish meeting activity for meeting {MeetingId} in phase {Phase}",
+                    meeting.Id, phase);
+            }
         }
 
         private async Task<MeetingEntity> LoadMeetingAsync(long meetingId, long communityId)
