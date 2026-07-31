@@ -11,6 +11,7 @@ public sealed class RecordingStatusConsumer : BackgroundService, IAsyncDisposabl
 {
     private const string Exchange = "recording.events";
     private const string Queue = "community-service.recording-status";
+    private const short VoiceChannelType = 2;
 
     // recording-service шлёт camelCase (recordingId), а System.Text.Json по умолчанию
     // сопоставляет имена с учётом регистра — без этого ни одно событие не разбиралось.
@@ -44,8 +45,11 @@ public sealed class RecordingStatusConsumer : BackgroundService, IAsyncDisposabl
             arguments: null, cancellationToken: stoppingToken);
         // Ключи в формате websocket-gateway: recording.community.<serverId>.<status>.
         // Тот же exchange слушает и gateway, но по своему биндингу на подписки клиента.
-        await _channel.QueueBindAsync(Queue, Exchange, "recording.community.*.ready", cancellationToken: stoppingToken);
-        await _channel.QueueBindAsync(Queue, Exchange, "recording.community.*.failed", cancellationToken: stoppingToken);
+        foreach (var suffix in new[] { "started", "assembling", "ready", "failed" })
+        {
+            await _channel.QueueBindAsync(Queue, Exchange, $"recording.community.*.{suffix}",
+                cancellationToken: stoppingToken);
+        }
 
         var consumer = new AsyncEventingBasicConsumer(_channel);
         consumer.ReceivedAsync += async (_, delivery) =>
@@ -80,21 +84,72 @@ public sealed class RecordingStatusConsumer : BackgroundService, IAsyncDisposabl
 
     private async Task HandleAsync(RecordingStatus status, CancellationToken cancellationToken)
     {
+        // Промежуточные статусы конвейера (transcribing, summarizing) карточку не
+        // двигают: для читателя чата это всё ещё «идёт обработка».
+        var phase = PhaseOf(status.Status);
+        if (phase is null)
+            return;
+
         using var scope = _services.CreateScope();
         var meetings = scope.ServiceProvider.GetRequiredService<MeetingRepository>();
         var channels = scope.ServiceProvider.GetRequiredService<ChannelRepository>();
-        var activity = scope.ServiceProvider.GetRequiredService<IMeetingActivityClient>();
         var meeting = await meetings.GetByRecordingIdAsync(status.RecordingId);
-        if (meeting is null)
+
+        if (meeting is not null)
+        {
+            // Карточку митинга на старте уже поставил MeetingGrpcService.StartMeeting —
+            // повторный upsert до сохранения activity_message_id создал бы вторую.
+            if (phase == "live")
+                return;
+            var meetingChannel = await channels.GetByIdAsync(meeting.ChannelId);
+            if (meetingChannel is null)
+                return;
+            var meetingActivity = scope.ServiceProvider.GetRequiredService<IMeetingActivityClient>();
+            var meetingMessageId = await meetingActivity.UpsertAsync(meeting, meetingChannel, phase);
+            if (meetingMessageId is { } messageId)
+                await meetings.SetActivityMessageIdAsync(meeting.Id, messageId);
             return;
-        var channel = await channels.GetByIdAsync(meeting.ChannelId);
-        if (channel is null)
-            return;
-        var messageId = await activity.UpsertAsync(meeting, channel,
-            string.Equals(status.Status, "ready", StringComparison.OrdinalIgnoreCase) ? "ready" : "failed");
-        if (messageId is { } id)
-            await meetings.SetActivityMessageIdAsync(meeting.Id, id);
+        }
+
+        await HandleChannelRecordingAsync(scope.ServiceProvider, channels, status, phase);
     }
+
+    // Запись, начатая прямо в голосовом канале: своей сущности у неё нет, поэтому
+    // карточка живёт в channel_recording_activity и публикуется в чат самого канала.
+    private static async Task HandleChannelRecordingAsync(
+        IServiceProvider services, ChannelRepository channels, RecordingStatus status, string phase)
+    {
+        if (!long.TryParse(status.ChannelId, out var channelId) ||
+            !long.TryParse(status.ServerId, out var communityId))
+            throw new InvalidOperationException("Recording status is missing channelId or serverId");
+
+        var channel = await channels.GetByIdAsync(channelId);
+        if (channel is null || channel.Type != VoiceChannelType)
+            return;
+
+        _ = long.TryParse(status.StartedBy, out var startedBy);
+        var activities = services.GetRequiredService<RecordingActivityRepository>();
+        var activity = await activities.AdvanceAsync(
+            status.RecordingId, communityId, channelId, startedBy, phase);
+        if (activity is null)
+            return;
+
+        var client = services.GetRequiredService<IRecordingActivityClient>();
+        var messageId = await client.UpsertAsync(activity, channel, phase);
+        if (messageId is { } id)
+            await activities.MarkPublishedAsync(status.RecordingId, phase, id);
+    }
+
+    // Статус записи -> фаза карточки. Фазы общие с митингами, чтобы клиент читал
+    // одно и то же поле status в system_payload.
+    private static string? PhaseOf(string status) => status.ToLowerInvariant() switch
+    {
+        "collecting" => "live",
+        "assembling" => "processing",
+        "ready" => "ready",
+        "failed" => "failed",
+        _ => null
+    };
 
     public async ValueTask DisposeAsync()
     {
@@ -106,5 +161,9 @@ public sealed class RecordingStatusConsumer : BackgroundService, IAsyncDisposabl
     {
         public string RecordingId { get; init; } = "";
         public string Status { get; init; } = "";
+        // Снежинки едут строками — теми же полями пользуется и браузер.
+        public string ServerId { get; init; } = "";
+        public string ChannelId { get; init; } = "";
+        public string StartedBy { get; init; } = "";
     }
 }

@@ -62,6 +62,20 @@ namespace Community_Service.Data
         public long? ActivityMessageId { get; set; }
     }
 
+    // Запись голосового канала, не относящаяся к митингу: у неё нет своей сущности
+    // в community-service, поэтому карточка активности живёт отдельной строкой.
+    public class RecordingActivityEntity
+    {
+        public string RecordingId { get; set; } = "";
+        public long CommunityId { get; set; }
+        public long ChannelId { get; set; }
+        public long StartedBy { get; set; }
+        public string Phase { get; set; } = "";
+        public string? PublishedPhase { get; set; }
+        public long? ActivityMessageId { get; set; }
+        public DateTime UpdatedAt { get; set; }
+    }
+
     public class InviteEntity
     {
         public string Code { get; set; } = "";

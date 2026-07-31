@@ -80,6 +80,7 @@ namespace Community_Service
             builder.Services.AddScoped<CategoryRepository>();
             builder.Services.AddScoped<ChannelRepository>();
             builder.Services.AddScoped<MeetingRepository>();
+            builder.Services.AddScoped<RecordingActivityRepository>();
             builder.Services.AddScoped<InviteRepository>();
             builder.Services.AddSingleton<OutboxWriter>();
             builder.Services.AddSingleton<OutboxStore>();
@@ -94,6 +95,7 @@ namespace Community_Service
             builder.Services.AddScoped<IPermissionGuard, PermissionGuard>();
             builder.Services.AddScoped<IMeetingRecordingClient, MeetingRecordingClient>();
             builder.Services.AddScoped<IMeetingActivityClient, MeetingActivityClient>();
+            builder.Services.AddScoped<IRecordingActivityClient, RecordingActivityClient>();
 
             builder.Services
                 .AddGrpcClient<Permissions.Grpc.PermissionService.PermissionServiceClient>(o =>
