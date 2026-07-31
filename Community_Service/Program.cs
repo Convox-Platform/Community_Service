@@ -29,6 +29,8 @@ namespace Community_Service
                 ?? throw new ArgumentNullException("JWT_SECRET not found");
             var origin = Environment.GetEnvironmentVariable("ORIGIN")
                 ?? throw new ArgumentNullException("ORIGIN not found");
+            var origins = (Environment.GetEnvironmentVariable("ORIGINS") ?? origin)
+                .Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             var permissionServiceUrl = Environment.GetEnvironmentVariable("PERMISSION_SERVICE_URL")
                 ?? throw new ArgumentNullException("PERMISSION_SERVICE_URL not found");
             var presenceServiceUrl = Environment.GetEnvironmentVariable("PRESENCE_SERVICE_URL")
@@ -113,7 +115,7 @@ namespace Community_Service
             builder.Services.AddCors(options =>
             {
                 options.AddDefaultPolicy(policy =>
-                    policy.WithOrigins(origin)
+                    policy.WithOrigins(origins)
                         .AllowAnyMethod().AllowAnyHeader()
                         .WithExposedHeaders("Grpc-Status", "Grpc-Message", "Grpc-Encoding", "Grpc-Accept-Encoding")
                         .AllowCredentials());
